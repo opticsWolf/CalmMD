@@ -1257,6 +1257,29 @@ mod tests {
     }
 
     #[test]
+    fn rename_rewrites_wiki_links_after_the_file_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let a = join_path(&root, "a.md");
+        fs::write(&a, "See [[b]] and [b](b.md).\n").unwrap();
+        fs::write(join_path(&root, "b.md"), "# B\n").unwrap();
+        let store = store();
+        store
+            .sync(
+                "main",
+                WorkspaceSnapshotDto {
+                    root: Some(root),
+                    documents: Vec::new(),
+                    active_document: None,
+                },
+            )
+            .unwrap();
+        store.rename_document("main", "b.md", "plan.md").unwrap();
+        let text = fs::read_to_string(&a).unwrap();
+        assert_eq!(text.trim_end(), "See [[plan]] and [b](plan.md).");
+    }
+
+    #[test]
     fn encodes_and_decodes_eol_and_bom() {
         let decoded = decode_from_disk("\u{feff}a\r\nb\r\nc\nd");
         assert!(decoded.bom);

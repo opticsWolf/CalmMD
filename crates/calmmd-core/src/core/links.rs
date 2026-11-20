@@ -211,6 +211,13 @@ fn mask_inline_code(line: &str) -> Vec<u8> {
 /// Rewrites links in `text` (the note at `from_doc`) that point at `from` to point at `to`.
 pub fn rewrite_links(text: &str, from_doc: &str, from: &str, to: &str, files: &[String]) -> String {
     let mut edits = Vec::new();
+    // Callers collect the file list after the move, so it holds `to` and not `from`. Keep the old
+    // path resolvable or wiki links cannot be recognised.
+    let wiki_files: Vec<String> = if files.iter().any(|file| path_key(file) == path_key(from)) {
+        files.to_vec()
+    } else {
+        files.iter().cloned().chain(std::iter::once(from.to_owned())).collect()
+    };
     let mut pos = 0usize;
     let mut fence: Option<(u8, usize)> = None;
     let dir = dirname(from_doc);
@@ -248,7 +255,7 @@ pub fn rewrite_links(text: &str, from_doc: &str, from: &str, to: &str, files: &[
             let (name, heading) = left.split_once('#').unwrap_or((left, ""));
             let name = name.trim();
             if !name.is_empty() {
-                if let Some(target) = resolve_wiki(name, from_doc, files) {
+                if let Some(target) = resolve_wiki(name, from_doc, &wiki_files) {
                     if path_key(&target) == path_key(from) {
                         let mut next = format!("[[{}", stem(to));
                         if !heading.is_empty() {
@@ -328,6 +335,15 @@ pub fn rewrite_links(text: &str, from_doc: &str, from: &str, to: &str, files: &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rewrites_wiki_links_when_the_listing_is_post_rename() {
+        // The explorer renames first, so the file list no longer contains the old name.
+        let renamed = vec!["C:/notes/a.md".to_string(), "C:/notes/plan.md".to_string()];
+        let text = "See [[b]] and [b](b.md).\n";
+        let out = rewrite_links(text, "C:/notes/a.md", "C:/notes/b.md", "C:/notes/plan.md", &renamed);
+        assert_eq!(out, "See [[plan]] and [b](plan.md).\n");
+    }
 
     #[test]
     fn rewrites_relative_links_and_wiki_links() {
