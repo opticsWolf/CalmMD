@@ -609,6 +609,17 @@ A browser-free export.
     }
 
     #[test]
+    fn creates_missing_parent_folders_for_exports() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("fresh").join("nested").join("note.html");
+        let out = out.to_string_lossy().into_owned();
+        let result = export_html("C:/notes/hello.md", &out, "# Hello\n", &prefs(), &Value::Null).unwrap();
+        assert!(std::path::Path::new(&out).is_file());
+        assert_eq!(result["path"], out);
+        assert!(result["bytes"].as_u64().unwrap_or(0) > 0);
+    }
+
+    #[test]
     fn builds_standalone_html_without_a_webview() {
         let html = build_html("# Hello\n\nA note with [[Other]] and `code`.\n", "C:/notes/hello.md", &prefs(), &Value::Null, false).unwrap();
         assert!(html.starts_with("<!doctype html>"));
