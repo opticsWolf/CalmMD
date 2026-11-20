@@ -10,8 +10,9 @@ something simpler, faster or more reliable rather than adding UI.
   screen capture or plugin marketplace in v1).
 - Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the architecture, the rules that keep things from breaking (scroll sync,
   live mode, saving, export), and the debugging tips.
-- For work on Rust-side rendering, spellchecking or PDF generation, read
-  [docs/RUST-CORE-PLAN.md](docs/RUST-CORE-PLAN.md). For the local MCP server read [docs/MCP.md](docs/MCP.md),
+- For work on Rust-side rendering, spellchecking, PDF generation or the GPUI Kit shell migration, read
+  [docs/RUST-CORE-PLAN.md](docs/RUST-CORE-PLAN.md). Section 11 is the active migration plan; do not
+  start a UI rewrite without agreeing a gate there first. For the local MCP server read [docs/MCP.md](docs/MCP.md),
   [docs/MCP-CLIENT-SETUP.md](docs/MCP-CLIENT-SETUP.md) and [skills/calmmd/SKILL.md](skills/calmmd/SKILL.md).
   The MCP bridge exposes live app state to an external client; it is not an in-app AI chat and has no built-in LLM.
 - For anything larger than a bug fix, open an issue first so we can agree on the approach.
@@ -21,7 +22,7 @@ something simpler, faster or more reliable rather than adding UI.
 ```sh
 npm install
 npm run dev          # browser build at http://localhost:1420 (no Rust needed)
-npm run app:dev      # desktop app (needs Rust + Tauri prerequisites)
+npm run app:dev      # current desktop app (needs Rust + Tauri prerequisites until the GPUI cutover)
 ```
 
 Add `?demo` to the browser URL for a showcase document. Options: `&mode=split|live|source|preview`,
@@ -36,7 +37,8 @@ npm run test:rust    # cargo test
 npm run build
 ```
 
-The Rust desktop build requires Rust 1.91 or newer (matching `src-tauri/Cargo.toml`).
+The current Tauri desktop build requires Rust 1.91 or newer (matching `src-tauri/Cargo.toml`).
+The GPUI Kit migration raises the MSRV to 1.92; see section 11 of `docs/RUST-CORE-PLAN.md`.
 
 `cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored` also runs the real PDF test
 (it needs Chrome or Edge). CI runs all of this on Windows, macOS and Linux.

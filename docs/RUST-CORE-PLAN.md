@@ -1,13 +1,18 @@
-# Rust core plan: Mordant, zspell, Takumi and ikat inside Tauri
+# CalmMD Rust core and GPUI Kit migration plan
 
-This is an implementation plan for moving CalmMD's heavy document processing into Rust **without
-replacing Tauri**. The Solid/CodeMirror UI stays the shell; Rust gains authoritative services for
-Markdown parsing/rendering, syntax highlighting, spellchecking and PDF production. Takumi is the
-LaTeX-free, CSS-compatible PDF path; ikat is an optional typeset engine. The existing
-MCP server can then call those services directly instead of round-tripping through the webview.
+This plan has two parts. Phases 0–7 are completed history: they moved CalmMD's heavy document
+processing into Rust while keeping the Tauri/Solid/CodeMirror shell. The active part is the
+**GPUI Kit shell migration**: the Rust services stay authoritative, the webview and Tauri shell are
+replaced by a native Rust UI, and the local MCP server calls the same core directly.
+
+The target stack is GPUI Kit 0.10.0. Its `Editor`, `TextView`, `Dock`, themes, dialogs and
+multi-window support replace the current Solid/CodeMirror UI. Takumi remains the default PDF path;
+ikat stays an optional typeset engine. No account, cloud service, telemetry or built-in LLM is
+introduced.
 
 See [`MCP.md`](MCP.md) for the current MCP implementation and [`ARCHITECTURE.md`](ARCHITECTURE.md)
-for the present TypeScript-centric architecture.
+for the present TypeScript-centric architecture. Section 11 is authoritative for the GPUI Kit cutover;
+`ARCHITECTURE.md` will be rewritten when that cutover lands.
 
 ---
 
@@ -16,13 +21,14 @@ for the present TypeScript-centric architecture.
 Move the parts of CalmMD that are expensive, CPU-bound or duplicated between preview and export into
 Rust, while preserving the current:
 
-- Tauri windowing and OS integration;
-- Solid + CodeMirror editor and UI;
-- local/privacy posture: no account, no cloud, no built-in LLM;
-- opt-in loopback MCP server;
-- file format: plain Markdown plus front matter.
+- the local/privacy posture: no account, no cloud, no telemetry, no built-in LLM;
+- the plain Markdown + front matter file format;
+- the opt-in loopback MCP server;
+- the behaviour and keyboard model users already know, even though Tauri, Solid and CodeMirror are
+  replaced by GPUI Kit.
 
-The first milestone is **not** a GPUI migration. Rust becomes a service layer behind Tauri commands.
+Phases 0–7 deliberately kept Tauri while Rust became authoritative. That milestone is done. The
+next milestone is a full native shell migration; it is a UI rewrite, not a dependency swap.
 
 ## Implementation status
 
@@ -85,7 +91,11 @@ The first milestone is **not** a GPUI migration. Rust becomes a service layer be
 - **Phase 7 — done:** the Tauri capability set is explicit instead of `core:default`; dead Rust
   helpers and compiler warnings were removed. Superseded TS fallbacks and DOMPurify were reviewed
   and kept deliberately for browser/test builds and webview safety. No runtime dependency changed.
-- **Phase 5b:** not started.
+- **Decision change — GPUI Kit is the target shell:** Tauri compatibility work is frozen. See
+  section 11 for the active migration plan. GPUI Kit 0.10.0 is Apache-2.0 and re-exports GPUI;
+  the current locked dependency graph requires Rust 1.92+. Its Windows build needs MSVC + CMake,
+  macOS needs macOS 15+, and Linux needs a graphical session with a working Vulkan driver.
+- **Phase 5b:** still optional and not part of the GPUI cutover.
 
 ---
 
@@ -98,8 +108,11 @@ The first milestone is **not** a GPUI migration. Rust becomes a service layer be
 | Spellchecking | `zspell` 0.5.5 | Native Rust, Hunspell-compatible, `check_indices()` gives byte offsets; no OS dependency | Apache-2.0 |
 | CSS-based PDF export | `takumi` / `takumi-pdf` | Rust HTML/CSS layout → paged PDF without a browser; closest LaTeX-free replacement for Paged.js | MIT OR Apache-2.0 |
 | Typeset PDF export | `ikat` 0.13.6 | Rust Markdown → LaTeX → PDF pipeline; Mermaid→TikZ, pgfplots, templates; no browser/Paged.js | MIT OR Apache-2.0 |
+| Native UI shell | `gpui-kit` 0.10.0 | GPUI component system: `Editor`, `TextView`, `Dock`, themes, dialogs, multi-window; re-exports GPUI through `gpui_kit::*` | Apache-2.0 |
+| Optional embedded browser | `gpui-webview` | Experimental Wry child view for Mermaid/Paged.js fallbacks only; not a general UI layer | MIT / Apache-2.0 (Wry) |
 
-`takumi` crate 2.20.0 requires Rust 1.91, so CalmMD's MSRV was raised to 1.91. Desktop exports use
+`takumi` crate 2.20.0 requires Rust 1.91, so CalmMD's MSRV was raised to 1.91. The GPUI Kit
+migration raises it to **1.92** for the current locked dependency graph. Desktop exports use
 the native `takumi-core`/`takumi-pdf` crates; the browser/WASM package is the equivalent engine for
 the non-Tauri app and tests. The visual review accepted Takumi as the default PDF engine.
 
@@ -121,7 +134,8 @@ Record every runtime dependency and version in `THIRD_PARTY_LICENSES.md`.
 ### 3.1 Mordant is not a UI renderer
 
 Mordant parses Markdown, exposes an AST, renders HTML and highlights code. It does **not** paint
-GPUI or DOM elements. With Tauri kept, the webview still paints the preview.
+UI elements. In the GPUI Kit shell, `TextView` paints formatted preview content and `Editor`
+paints the source; Mordant remains the parser/renderer that feeds those views and export.
 
 Two preview strategies exist:
 
@@ -161,9 +175,9 @@ comparisons and as an escape hatch.
 
 ### 3.4 zspell needs dictionaries and UTF-16 conversion
 
-`zspell::check_indices()` returns byte offsets. CodeMirror uses UTF-16 code-unit offsets. The Rust
-service must convert `(byte_start, byte_end)` to `(u32, u32)` UTF-16 ranges exactly as
-`src-tauri/src/spell.rs` does today.
+`zspell::check_indices()` returns byte offsets. CodeMirror uses UTF-16 code-unit offsets; the GPUI
+Kit editor may expose byte or glyph offsets depending on the API. Keep the conversion helper and
+verify the exact offset unit at the Phase 11 editor gate rather than assuming the webview model.
 
 zspell suggestions are behind `unstable-suggestions`. The first implementation enables that feature
 and caps results at six suggestions; the OS checker stays available as a fallback for languages we
@@ -174,24 +188,26 @@ do not bundle. Revisit if the suggestion algorithm's cost becomes noticeable.
 ## 4. Target architecture
 
 ```text
-Solid / CodeMirror UI
-  │  Tauri commands + events (typed DTOs)
+GPUI Kit shell                      apps/calmmd-gpui/src/
+  ui/         Views, Actions, themes and platform capability seams
+  │  Entities, subscriptions and direct Rust calls
   ▼
-Rust core services                  src-tauri/src/core/
+Rust core services                  crates/calmmd-core/src/
   markdown/   Mordant parse, AST, HTML, headings, source map
   highlight/  Mordant/syntect highlighter themes generated from CalmMD's CSS palette
   spell/      zspell dictionaries, UTF-16 ranges, learns
   export/     HTML via markdown, PDF via browser/Takumi/ikat
   workspace/  rooted live buffers, history, links and file operations (Phase 6 first slice)
-  docs/       drafts, conflicts and autosave targets (still in the webview)
-  explorer/   tree UI state (still in the webview)
-  mcp/        calls core services directly except for PDF/HTML export
+  docs/       drafts, conflicts and autosave targets
+  explorer/   tree operations and event projections
+  mcp/        calls core services directly, including export
   ▼
 Disk / app data
 ```
 
-The webview remains authoritative for UI state until the relevant Rust service exists. During
-migration, a Tauri command may delegate to Rust for one concern and still to the webview for another.
+During the migration the Tauri shell remains available as a compatibility target. It is not the
+long-term architecture: GPUI views own only presentation focus, layout and interaction; durable
+state remains in the Rust core services.
 
 ---
 
@@ -396,17 +412,19 @@ receives state-change events instead.
 
 ## 7. MCP impact
 
-Current flow:
-
-```text
-MCP tool → Tauri event → webview dispatcher → TS controllers → Tauri command → disk
-```
-
-Target flow after Phase 6:
+Current Tauri flow (historical):
 
 ```text
 MCP tool → Rust core service → disk
                          └→ Tauri event → webview state update
+```
+
+Target GPUI Kit flow:
+
+```text
+MCP tool ─┐
+          ├→ Rust core service → disk
+GPUI view ┘          └→ Entity subscription / notification → GPUI repaint
 ```
 
 Benefits:
@@ -470,3 +488,175 @@ Phases 0–4 are a successful first milestone:
 
 Phase 5a (Takumi) is now the default PDF engine; Phase 5b (ikat) can ship later as a separately
 reviewed typeset engine option.
+
+---
+
+## 11. GPUI Kit shell migration (active plan)
+
+Phases 0–7 made the Rust core authoritative but left the Tauri/webview shell in place. The GPUI Kit
+migration replaces that shell. It is intentionally a sequence of reversible slices: the Tauri app
+keeps working until the GPUI app reaches feature parity, then the cutover flips the default binary.
+
+### 11.1 Target decisions
+
+- Use **`gpui-kit = "0.10.0"`** as the single UI dependency and import GPUI via `use gpui_kit::*`.
+  Do not add a separate `gpui` dependency or a `font-kit` feature; Kit re-exports the pinned GPUI
+  snapshot.
+- Raise the MSRV to **1.92**. Pin the GPUI snapshot exactly; a caret update can break Kit.
+- Prefer Kit's `syntect` editor highlighting first. `tree-sitter-markdown` may be enabled later for
+  folding and syntax-aware editing; all grammars together add tens of megabytes.
+- Use `TextView` for the preview. It supports Markdown, simple HTML, selection, code block actions
+  and custom Markdown plugins, so it is the natural home for CalmMD callouts, wiki links and tasks.
+- Use `Dock` for the workspace layout, `Root` for dialogs/notifications, Kit themes for light/dark
+  colour schemes, and GPUI Actions/key contexts for the existing command registry.
+- Keep `gpui-webview` out of the default path. It is experimental and platform-dependent; Linux
+  Wayland is unsupported. Use it only behind an explicit fallback for browser-only behaviour such
+  as Mermaid rendering or the Paged.js export comparison.
+- Keep MCP in-process with the core. No HTTP round trip through a UI process remains after cutover.
+
+Sources consulted for this amendment:
+[GPUI Kit installation](https://gpui-kit.com/docs/installation/),
+[getting started](https://gpui-kit.com/docs/getting-started/),
+[Editor](https://gpui-kit.com/component/editor/),
+[TextView](https://gpui-kit.com/component/text-view/),
+[Dock](https://gpui-kit.com/component/dock/),
+[multi-window](https://gpui-kit.com/docs/multi-window/),
+[WebView](https://gpui-kit.com/docs/webview/),
+[packaging](https://gpui-kit.com/docs/packaging/) and
+[Apache-2.0 licence](https://raw.githubusercontent.com/longbridge/gpui-kit/main/LICENSE-APACHE).
+Documentation prose from GPUI Kit is CC BY 4.0; this plan summarises rather than copies it.
+
+### 11.2 Repository shape
+
+```text
+crates/calmmd-core/       pure Rust services + MCP; no Tauri or GPUI imports
+apps/calmmd-gpui/         GPUI Kit shell, actions, views, platform seams
+apps/calmmd-tauri/        legacy shell, frozen until cutover
+src/                      existing Solid/CodeMirror UI, frozen until cutover
+```
+
+The first migration slice extracts `src-tauri/src/core`, `mcp`, `fsops`, `tree`, `search`, `spell`,
+`export`, `kv` and related helpers into `crates/calmmd-core`. Tauri-specific command wrappers and
+window registry code stay in the legacy app until their GPUI replacements exist.
+
+### 11.3 Decision gates
+
+1. **Core split gate** — no behaviour change; both shells build and MCP smoke stays green.
+2. **Editor gate** — GPUI `Editor` matches source editing, autosave, undo, spell underlines and
+   the 500-line scroll-sync fixture.
+3. **Preview gate** — `TextView` renders the extension corpus with acceptable visual parity.
+4. **Diagram gate** — choose native SVG rendering, an external Mermaid CLI, or explicit
+   `gpui-webview`; do not add an embedded browser by default.
+5. **Export gate** — HTML/PDF export no longer uses the Tauri/webview bridge and passes golden
+   snapshots plus Takumi visual review.
+6. **Platform gate** — native menus, dialogs, clipboard, URL/reveal, drag-and-drop, single
+   instance and launch paths work on all supported platforms.
+7. **Cutover gate** — GPUI binary passes every test and smoke check; only then remove Tauri.
+
+If a gate fails, the Tauri shell remains the shipped default and the GPUI slice stays behind a
+Cargo feature.
+
+### 11.4 Phases
+
+#### Phase 8 — Foundation and crate split
+
+- Create a Cargo workspace with `calmmd-core`, `calmmd-gpui` and legacy `calmmd-tauri`.
+- Move UI-independent modules into `calmmd-core`; keep Tauri command wrappers in the legacy app.
+- Add `gpui-kit = "0.10.0"`, raise MSRV to 1.92 and pin the GPUI snapshot.
+- Add a minimal GPUI window: `gpui_kit::application().run`, `gpui_kit::init(cx)`, `Root`, theme
+  and one `Label`.
+- **Exit:** both binaries build; `cargo test` and the Tauri-hosted MCP smoke are unchanged.
+
+#### Phase 9 — Window and workspace shell
+
+- Implement the GPUI root view and a `Dock` layout with sidebar, tab bar, editor/preview split and
+  status bar.
+- Add multi-window support using shared `Entity` state for workspace/session data.
+- Map CalmMD's command registry to GPUI Actions and key contexts; add the command palette.
+- **Exit:** a user can open, close and switch windows and run commands without Tauri menus.
+
+#### Phase 10 — Core service adapters
+
+- Wrap `WorkspaceRegistry`, `SessionStore`, `History`, `AutosaveService` and buffer services in
+  GPUI `Entity` adapters.
+- Subscribe to core events and call `cx.notify()` instead of Tauri/webview events.
+- Add capability seams for dialogs, clipboard, URL opening and file reveal.
+- **Exit:** the GPUI shell can open a folder and create/read/write documents entirely through
+  `calmmd-core`; MCP sees the same state.
+
+#### Phase 11 — Editor
+
+- Use GPUI Kit `Editor` with Markdown language rules, line numbers, folding and the active theme.
+- Port spell underlines/suggestions from zspell ranges into editor decorations.
+- Wire autosave, drafts, conflict resolution, local history and tool-driven undo/redo to the core.
+- Port link navigation, search, live-preview updates and scroll anchors from the existing TS tests.
+- **Exit:** editor gate passes, including the 500-line scroll fixture and MCP write/undo smoke.
+
+#### Phase 12 — Preview and theming
+
+- Render the preview with `TextView::markdown` and custom plugins for CalmMD extensions.
+- Translate `src/styles/tokens.css` palettes into GPUI Kit theme configurations.
+- Remove DOMPurify from this path: GPUI text views do not execute or parse browser HTML.
+- **Exit:** preview gate passes against extension snapshots and light/dark screenshots.
+
+#### Phase 13 — Diagrams, math and media
+
+- Render KaTeX output and embedded images with GPUI elements.
+- Decide the Mermaid path at the diagram gate. Default to a local native/SVG solution if parity is
+  acceptable; otherwise use explicit `gpui-webview` only for diagram screens.
+- Port video/embed cards and page-break markers to GPUI elements.
+- **Exit:** visual review covers diagrams, math, images, embeds and page breaks.
+
+#### Phase 14 — Export without the bridge
+
+- Move image readback and CSS/font asset acquisition into `calmmd-core`.
+- Delete the webview `calmmd://mcp/request` export bridge; MCP tools call core export directly.
+- Keep Takumi as default. Keep Paged.js/Chromium only as an explicit comparison fallback, using
+  `gpui-webview` where supported.
+- **Exit:** HTML/PDF exports match the current baseline snapshots and the Takumi visual review;
+  MCP smoke passes with no UI process requirement.
+
+#### Phase 15 — Platform capabilities
+
+- Replace Tauri plugins with GPUI/AccessKit/platform adapters: native or in-app menus, file
+  dialogs, clipboard, `cx.open_url`, reveal-in-folder, drag-and-drop, single instance and launch
+  paths.
+- Document platform limits. Linux `NativeMenu` falls back to a GPUI popup; `gpui-webview` does not
+  support Wayland.
+- **Exit:** platform gate passes on Windows, macOS and Linux.
+
+#### Phase 16 — MCP finalization
+
+- Remove all Tauri dependencies from MCP tools and resources.
+- Confirm the 18 tools, three prompts and four resources still operate on live core state.
+- Keep the loop-only HTTP endpoint, bearer token and localhost origin validation unchanged.
+- **Exit:** full MCP smoke passes against the GPUI binary and the core crate without a webview.
+
+#### Phase 17 — Cutover
+
+- Make `calmmd-gpui` the shipped binary. Keep the Tauri binary behind a `legacy-tauri` feature for
+  one release, then delete `apps/calmmd-tauri`, `src/`, Tauri capabilities and `tauri.conf.json`.
+- Remove TypeScript tooling and dependencies only after the release confirms parity.
+- Update README, CONTRIBUTING, SPEC, ARCHITECTURE, MCP docs and THIRD_PARTY_LICENSES.
+- **Exit:** default CI build produces GPUI-only artifacts; no Tauri/webview code remains in the
+  shipping app.
+
+#### Phase 18 — Packaging and release
+
+- Replace Tauri bundling with per-platform packaging: `.app`/`.dmg`, Windows installer/ZIP and
+  Linux tarball/`.deb`, per GPUI Kit's packaging guide.
+- Add icons, app identity, resource inventories, signing/notarization notes and release tests.
+- Run CI on Rust 1.92 across Windows, macOS and Linux; keep MCP, Markdown, spell, export and GPUI
+  view tests in the matrix.
+- **Exit:** installable GPUI Kit builds are produced and smoke-tested on every target.
+
+### 11.5 Definition of done for the GPUI milestone
+
+The migration is done when:
+
+- the shipped app is a GPUI Kit binary with no Tauri runtime or webview dependency in the default
+  feature set;
+- Rust core services remain authoritative and MCP calls them directly;
+- editor, preview, export, spellcheck, history, sessions and Spaces match the Tauri-era behaviour;
+- the full MCP smoke passes and all golden/visual tests pass on Windows, macOS and Linux;
+- no account, cloud, telemetry, built-in LLM or non-permissive runtime dependency was introduced.
