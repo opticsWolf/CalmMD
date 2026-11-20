@@ -16,7 +16,7 @@ use std::{
     collections::HashMap,
     fs,
     path::Path,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}},
     time::UNIX_EPOCH,
 };
 use crate::app::AppContext;
@@ -75,6 +75,7 @@ pub struct WorkspaceStore<S: crate::core::history::HistoryStore> {
     history: History<S>,
     undo: RwLock<HashMap<String, Vec<TextChange>>>,
     redo: RwLock<HashMap<String, Vec<TextChange>>>,
+    reject_dirty_tool_writes: AtomicBool,
 }
 
 impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
@@ -84,6 +85,7 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             history,
             undo: RwLock::new(HashMap::new()),
             redo: RwLock::new(HashMap::new()),
+            reject_dirty_tool_writes: AtomicBool::new(false),
         })
     }
 
@@ -122,6 +124,25 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         Ok(())
     }
 
+    pub fn update_autosave(&self, window: &str, path: &str, dirty: bool, conflict: bool, mtime: Option<f64>) -> Result<(), String> {
+        let mut all = self.write_lock()?;
+        if let Some(doc) = all.get_mut(window).and_then(|state| state.document_mut(path)) {
+            doc.dirty = dirty;
+            doc.conflict = conflict;
+            if mtime.is_some() { doc.mtime_ms = mtime; }
+        }
+        Ok(())
+    }
+
+    pub fn remove_document(&self, window: &str, path: &str) -> Result<(), String> {
+        let mut all = self.write_lock()?;
+        if let Some(state) = all.get_mut(window) {
+            state.docs.remove(&path_key(path));
+            if state.active.as_deref().is_some_and(|active| path_key(active) == path_key(path)) { state.active = None; }
+        }
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn history(&self) -> &History<S> {
         &self.history
@@ -156,12 +177,29 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         if !is_within(&path, &root) {
             return Err("That path is outside the open folder".into());
         }
+        // Canonicalize the nearest existing ancestor too, so a new file beneath a link
+        // cannot escape the workspace. Broken links are rejected rather than skipped.
+        let canonical_root = fs::canonicalize(&root).map_err(|e| fsops::describe(&e))?;
+        let mut existing = Path::new(&path);
+        loop {
+            match fs::symlink_metadata(existing) {
+                Ok(_) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    existing = existing.parent().ok_or("Invalid workspace path")?;
+                }
+                Err(error) => return Err(fsops::describe(&error)),
+            }
+        }
+        let canonical = fs::canonicalize(existing).map_err(|e| fsops::describe(&e))?;
+        if !canonical.starts_with(&canonical_root) {
+            return Err("That path is outside the open folder".into());
+        }
         Ok(path)
     }
 
     fn live_or_disk(&self, window: &str, path: &str) -> Result<(String, String, bool, f64), String> {
         let all = self.workspace(window)?;
-        if let Some(doc) = all.get(window).and_then(|state| state.document(path)) {
+        if let Some(doc) = all.get(window).and_then(|state| state.document(path)).filter(|doc| doc.dirty || doc.conflict) {
             return Ok((
                 doc.text.clone(),
                 doc.eol.clone(),
@@ -216,12 +254,16 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         }
         let mut out = Vec::new();
         let mut queue = vec![start.to_owned()];
+        let mut visited = std::collections::HashSet::new();
         while let Some(dir) = queue.pop() {
+            let Ok(canonical) = fs::canonicalize(&dir) else { continue };
+            if !visited.insert(canonical) { continue; }
             let entries = match tree::list(Path::new(&dir), false) {
                 Ok(entries) => entries,
                 Err(_) => continue,
             };
             for entry in entries {
+                if self.resolve_path_for_listing(root, &entry.path).is_err() { continue; }
                 if entry.is_dir {
                     if out.len() < MAX_FILES {
                         queue.push(entry.path);
@@ -235,6 +277,13 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             }
         }
         Ok(out)
+    }
+
+    fn resolve_path_for_listing(&self, root: &str, path: &str) -> Result<(), String> {
+        let root = fs::canonicalize(root).map_err(|e| fsops::describe(&e))?;
+        let path = fs::canonicalize(path).map_err(|e| fsops::describe(&e))?;
+        if !path.starts_with(root) { return Err("That path is outside the open folder".into()); }
+        Ok(())
     }
 
     pub fn list_documents(&self, window: &str, markdown_only: bool, folder: Option<&str>) -> Result<Value, String> {
@@ -265,10 +314,17 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
 
     pub fn read_document(&self, window: &str, raw_path: &str) -> Result<Value, String> {
         let path = self.resolve(window, raw_path)?;
-        let (text, _, _, _) = self.live_or_disk(window, &path)?;
+        let (text, eol, bom, mtime) = self.live_or_disk(window, &path)?;
+        let all = self.read_lock()?;
+        let doc = all.get(window).and_then(|state| state.document(&path));
         Ok(json!({
             "path": path,
             "text": text,
+            "eol": eol,
+            "bom": bom,
+            "mtimeMs": mtime,
+            "dirty": doc.is_some_and(|doc| doc.dirty),
+            "conflict": doc.is_some_and(|doc| doc.conflict),
             "headings": outline(&text),
         }))
     }
@@ -305,7 +361,8 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         let name = with_markdown_ext(name);
         validate_name(&name)?;
         let path = join_path(&parent, &name);
-        fsops::write_atomic(Path::new(&path), b"").map_err(|e| fsops::describe(&e))?;
+        self.resolve(window, &path)?;
+        tree::create_file(path.clone())?;
         let mut events = vec![WorkspaceEventDto::created(path.clone(), false)];
         let mut result = json!({ "path": path });
         if let Some(text) = text.filter(|text| !text.is_empty()) {
@@ -364,11 +421,14 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         {
             let all = self.workspace(window)?;
             if let Some(doc) = all.get(window).and_then(|state| state.document(&path)) {
+                if doc.dirty && self.reject_dirty_tool_writes.load(Ordering::Relaxed) {
+                    return Err("This document has unsaved edits. Save it in CalmMD before changing it through MCP.".into());
+                }
                 if doc.conflict {
                     return Err("This document has a conflict. Resolve it in CalmMD before editing it.".into());
                 }
                 if let Some(mtime) = doc.mtime_ms {
-                    if (mtime_ms(&path) - mtime).abs() > 1.0 {
+                    if mtime_ms(&path) != mtime {
                         return Err("The file changed on disk; reload it in CalmMD before editing it.".into());
                     }
                 }
@@ -433,7 +493,14 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             stack.pop().ok_or_else(|| if redo { "Nothing to redo" } else { "Nothing to undo" })?
         };
         let target = if redo { change.after.clone() } else { change.before.clone() };
-        let (_value, events) = self.apply_text(window, &path, &target, "replace", false)?;
+        let (_value, events) = match self.apply_text(window, &path, &target, "replace", false) {
+            Ok(result) => result,
+            Err(error) => {
+                let stacks = if redo { &self.redo } else { &self.undo };
+                stacks.write().map_err(|e| e.to_string())?.entry(key).or_default().push(change);
+                return Err(error);
+            }
+        };
         let stacks = if redo { self.undo.write() } else { self.redo.write() };
         let mut stacks = stacks.map_err(|e| e.to_string())?;
         // Both stacks keep the original direction: undo jumps to `before`, redo to `after`.
@@ -461,11 +528,17 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
     }
 
     fn move_path(&self, window: &str, from: &str, to: &str) -> Result<Vec<WorkspaceEventDto>, String> {
+        // Rewrites may affect any document, so do not move while a GPUI buffer has
+        // an outstanding save. This also prevents a pending save recreating `from`.
+        if self.reject_dirty_tool_writes.load(Ordering::Relaxed)
+            && self.read_lock()?.values().any(|state| state.docs.values().any(|doc| doc.dirty || doc.conflict)) {
+            return Err("Save or resolve open documents before moving or renaming files.".into());
+        }
         tree::rename(Path::new(from), Path::new(to)).map_err(|e| e.to_string())?;
         self.history.rename(from, to)?;
         self.retarget_journal(from, to);
         let mut all = self.write_lock()?;
-        if let Some(state) = all.get_mut(window) {
+        for state in all.values_mut() {
             state.retarget(from, to);
         }
         drop(all);
@@ -563,9 +636,10 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         let root = self.root_of(window)?;
         let folder = match folder {
             Some(folder) => self.resolve(window, folder)?,
-            None => root,
+            None => root.clone(),
         };
-        let entries = tree::list(Path::new(&folder), false).map_err(|e| fsops::describe(&e))?;
+        let entries: Vec<_> = tree::list(Path::new(&folder), false).map_err(|e| fsops::describe(&e))?
+            .into_iter().filter(|entry| self.resolve_path_for_listing(&root, &entry.path).is_ok()).collect();
         let files: Vec<_> = entries.iter().filter(|entry| !entry.is_dir && is_markdown_path(&entry.name)).take(limit).collect();
         let all = self.read_lock()?;
         let open = all
@@ -711,6 +785,10 @@ impl WorkspaceRegistry {
         })
     }
 
+    pub fn reject_dirty_tool_writes(&self) {
+        self.store.reject_dirty_tool_writes.store(true, Ordering::Relaxed);
+    }
+
     pub fn window_label(target: Option<&str>) -> String {
         target.filter(|label| !label.is_empty()).unwrap_or(DEFAULT_WINDOW).to_owned()
     }
@@ -723,9 +801,26 @@ impl WorkspaceRegistry {
         self.store.upsert_document(window, document, active)
     }
 
+    pub fn remove_window(&self, window: &str) -> Result<(), String> {
+        self.store.write_lock()?.remove(window);
+        Ok(())
+    }
+
+    pub fn update_autosave(&self, window: &str, path: &str, dirty: bool, conflict: bool, mtime: Option<f64>) -> Result<(), String> {
+        self.store.update_autosave(window, path, dirty, conflict, mtime)
+    }
+
+    pub fn remove_document(&self, window: &str, path: &str) -> Result<(), String> {
+        self.store.remove_document(window, path)
+    }
+
     fn emit(&self, window: &str, events: Vec<WorkspaceEventDto>) {
         for event in events {
-            self.app.emit_to(window, "calmmd://workspace", event);
+            if event.kind == "renamed" || event.kind == "moved" {
+                self.app.emit("calmmd://workspace", event);
+            } else {
+                self.app.emit_to(window, "calmmd://workspace", event);
+            }
         }
     }
 
@@ -838,7 +933,7 @@ pub fn decode_from_disk(raw: &str) -> crate::core::dto::DecodedText {
     }
 }
 
-pub(crate) fn encode_for_disk(text: &str, eol: &str, bom: bool) -> String {
+pub fn encode_for_disk(text: &str, eol: &str, bom: bool) -> String {
     let body = if eol == "\r\n" { text.replace('\n', "\r\n") } else { text.to_owned() };
     if bom { format!("\u{feff}{body}") } else { body }
 }
@@ -942,20 +1037,148 @@ mod tests {
 
     #[test]
     fn resolve_rejects_paths_outside_the_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
         let store = store();
         store
             .sync(
                 "main",
                 WorkspaceSnapshotDto {
-                    root: Some("C:/notes".into()),
+                    root: Some(root.clone()),
                     documents: Vec::new(),
                     active_document: None,
                 },
             )
             .unwrap();
-        assert_eq!(store.resolve("main", "sub/a.md").unwrap(), "C:/notes/sub/a.md");
+        assert_eq!(store.resolve("main", "sub/a.md").unwrap(), join_path(&root, "sub/a.md"));
         assert!(store.resolve("main", "../secret.md").is_err());
-        assert!(store.resolve("main", "C:/other/a.md").is_err());
+        assert!(store.resolve("main", dir.path().parent().unwrap().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn linked_paths_cannot_escape_the_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("secret.md"), "secret").unwrap();
+        let link = root.path().join("link");
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(outside.path(), &link);
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(outside.path(), &link);
+        if linked.is_err() { return; } // Windows may not permit creating symlinks.
+        let store = store();
+        store.sync("main", WorkspaceSnapshotDto {
+            root: Some(root.path().to_string_lossy().into_owned()),
+            documents: Vec::new(), active_document: None,
+        }).unwrap();
+        assert!(store.read_document("main", "link/secret.md").is_err());
+        assert!(store.resolve("main", "link/new.md").is_err());
+        assert!(store.list_documents("main", true, None).unwrap().as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn triage_excludes_symlinks_to_external_notes() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.md");
+        fs::write(&secret, "external secret").unwrap();
+        fs::write(root.path().join("safe.md"), "safe").unwrap();
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&secret, root.path().join("linked.md"));
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_file(&secret, root.path().join("linked.md"));
+        if linked.is_err() { return; }
+        let store = store();
+        store.sync("main", WorkspaceSnapshotDto { root: Some(root.path().to_string_lossy().into_owned()), documents: vec![], active_document: None }).unwrap();
+        let triage = store.triage_folder("main", None, 100, 100).unwrap();
+        assert_eq!(triage["total"], 1);
+        assert!(!triage.to_string().contains("external secret"));
+    }
+
+    #[test]
+    fn read_document_returns_disk_format_and_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "\u{feff}a\r\nb\r\n").unwrap();
+        let store = store();
+        store.sync("main", WorkspaceSnapshotDto {
+            root: Some(dir.path().to_string_lossy().into_owned()),
+            documents: Vec::new(), active_document: None,
+        }).unwrap();
+        let doc = store.read_document("main", "a.md").unwrap();
+        assert_eq!(doc["text"], "a\nb\n");
+        assert_eq!(doc["eol"], "\r\n");
+        assert_eq!(doc["bom"], true);
+        assert!(doc["mtimeMs"].as_f64().unwrap() > 0.0);
+    }
+
+    #[test]
+    fn creation_rejects_existing_document_without_touching_it() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "original").unwrap();
+        let store = store();
+        store.sync("main", WorkspaceSnapshotDto { root: Some(dir.path().to_string_lossy().into_owned()), documents: vec![], active_document: None }).unwrap();
+        assert!(store.create_document("main", None, "a.md", Some("replacement")).is_err());
+        assert_eq!(fs::read_to_string(dir.path().join("a.md")).unwrap(), "original");
+    }
+
+    #[test]
+    fn dirty_mirror_is_readable_and_protected_from_tool_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md").to_string_lossy().into_owned();
+        fs::write(&path, "disk").unwrap();
+        let store = store();
+        store.reject_dirty_tool_writes.store(true, Ordering::Relaxed);
+        store.sync("main", WorkspaceSnapshotDto { root: Some(dir.path().to_string_lossy().into_owned()),
+            documents: vec![WorkspaceDocumentDto { path: path.clone(), text: "unsaved".into(), eol: "\n".into(), bom: false, mtime_ms: None, dirty: true, conflict: false }], active_document: Some(path.clone()) }).unwrap();
+        let read = store.read_document("main", &path).unwrap();
+        assert_eq!(read["text"], "unsaved");
+        assert_eq!(read["dirty"], true);
+        assert!(store.write_document("main", &path, "tool", "replace", true).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "disk");
+    }
+
+    #[test]
+    fn clean_mirror_reads_external_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md").to_string_lossy().into_owned();
+        fs::write(&path, "external").unwrap();
+        let store = store();
+        store.sync("main", WorkspaceSnapshotDto { root: Some(dir.path().to_string_lossy().into_owned()),
+            documents: vec![WorkspaceDocumentDto { path: path.clone(), text: "old".into(), eol: "\n".into(), bom: false, mtime_ms: None, dirty: false, conflict: false }], active_document: Some(path.clone()) }).unwrap();
+        assert_eq!(store.read_document("main", &path).unwrap()["text"], "external");
+    }
+
+    #[test]
+    fn rename_is_blocked_until_pending_edits_are_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.md").to_string_lossy().into_owned();
+        fs::write(&path, "disk").unwrap();
+        let store = store();
+        store.reject_dirty_tool_writes.store(true, Ordering::Relaxed);
+        store.sync("main", WorkspaceSnapshotDto { root: Some(dir.path().to_string_lossy().into_owned()),
+            documents: vec![WorkspaceDocumentDto { path: path.clone(), text: "edited".into(), eol: "\n".into(), bom: false, mtime_ms: None, dirty: true, conflict: false }], active_document: Some(path.clone()) }).unwrap();
+        assert!(store.rename_document("main", &path, "new.md").is_err());
+        assert!(Path::new(&path).exists());
+        store.update_autosave("main", &path, false, false, None).unwrap();
+        store.rename_document("main", &path, "new.md").unwrap();
+        assert!(!Path::new(&path).exists());
+        assert_eq!(store.status("main", "main", json!([])).unwrap()["activeDocument"], dir.path().join("new.md").to_string_lossy().as_ref());
+    }
+
+    #[test]
+    fn failed_undo_keeps_its_history_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md").to_string_lossy().into_owned();
+        fs::write(&path, "one").unwrap();
+        let store = store();
+        store.reject_dirty_tool_writes.store(true, Ordering::Relaxed);
+        store.sync("main", WorkspaceSnapshotDto { root: Some(dir.path().to_string_lossy().into_owned()), documents: vec![], active_document: None }).unwrap();
+        store.write_document("main", &path, "two", "replace", true).unwrap();
+        store.update_autosave("main", &path, true, false, None).unwrap();
+        assert!(store.undo_document("main", &path).is_err());
+        store.update_autosave("main", &path, false, false, None).unwrap();
+        store.undo_document("main", &path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "one");
     }
 
     #[test]

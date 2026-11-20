@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 #[allow(dead_code)]
 pub trait Platform: Send + Sync {
     fn open_folder(&self) -> Option<PathBuf>;
+    fn open_file(&self) -> Option<PathBuf>;
+    fn open_image(&self) -> Option<PathBuf> { None }
     fn save_file(&self, default_name: &str) -> Option<PathBuf>;
     fn reveal(&self, path: &Path) -> Result<(), String>;
     fn open_url(&self, url: &str, cx: &mut App);
@@ -20,6 +22,16 @@ pub struct NativePlatform;
 impl Platform for NativePlatform {
     fn open_folder(&self) -> Option<PathBuf> {
         rfd::FileDialog::new().pick_folder()
+    }
+
+    fn open_file(&self) -> Option<PathBuf> {
+        rfd::FileDialog::new().add_filter("Markdown", &["md", "markdown", "mdown", "mkd", "mdx", "txt"]).pick_file()
+    }
+
+    fn open_image(&self) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .add_filter("Image", &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"])
+            .pick_file()
     }
 
     fn save_file(&self, default_name: &str) -> Option<PathBuf> {
@@ -83,6 +95,8 @@ impl Platform for MemoryPlatform {
     fn open_folder(&self) -> Option<PathBuf> {
         None
     }
+
+    fn open_file(&self) -> Option<PathBuf> { None }
 
     fn save_file(&self, _default_name: &str) -> Option<PathBuf> {
         None

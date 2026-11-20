@@ -25,6 +25,10 @@ pub struct DraftRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     pub updated_at: u128,
+    #[serde(default = "default_eol")]
+    pub eol: String,
+    #[serde(default)]
+    pub bom: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -83,8 +87,10 @@ fn default_eol() -> String {
 
 fn draft_key(id: &str) -> Result<String, String> {
     let key = format!("{DRAFT_PREFIX}{id}");
-    kv::key_to_file(&key)?;
-    Ok(key)
+    if kv::key_to_file(&key).is_ok() { return Ok(key); }
+    // GPUI uses full paths as autosave IDs; encode them into a safe, bounded KV key.
+    use sha2::{Digest, Sha256};
+    Ok(format!("{DRAFT_PREFIX}path-{:x}", Sha256::digest(id.as_bytes())))
 }
 
 fn now_ms() -> u128 {
@@ -135,7 +141,7 @@ impl<S: HistoryStore> BufferStore<S> {
         for key in self.store.list(DRAFT_PREFIX)? {
             let Some(raw) = self.store.get(&key)? else { continue };
             let Ok(record) = serde_json::from_str::<DraftRecord>(&raw) else { continue };
-            if record.v != 1 || record.text.is_empty() {
+            if record.v != 1 || (record.text.is_empty() && record.path.as_deref().unwrap_or("").is_empty()) {
                 continue;
             }
             out.push(DraftEntry {
@@ -156,6 +162,8 @@ impl<S: HistoryStore> BufferStore<S> {
             untitled_index: req.untitled_index,
             path: req.path.clone(),
             updated_at: now_ms(),
+            eol: req.eol.clone(),
+            bom: req.bom,
         };
 
         let Some(path) = req.path.as_deref().filter(|path| !path.is_empty()) else {
@@ -192,10 +200,12 @@ impl<S: HistoryStore> BufferStore<S> {
                     .map(|duration| duration.as_secs_f64() * 1000.0);
                 req.mtime_ms
                     .zip(current)
-                    .is_some_and(|(known, current)| (known - current).abs() > 1.0)
+                    .is_some_and(|(known, current)| known != current)
             }
-            // A missing file was trashed or created by Save As; writing recreates it.
-            Err(_) => false,
+            // A previously observed file may have been moved or removed. Preserve the
+            // buffer as a conflict instead of recreating its old path.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => req.mtime_ms.is_some(),
+            Err(error) => return Err(fsops::describe(&error)),
         };
         if changed_on_disk {
             self.write_draft(&req.id, &draft)?;
@@ -208,11 +218,10 @@ impl<S: HistoryStore> BufferStore<S> {
         }
 
         let body = encode_for_disk(&req.text, &req.eol, req.bom);
-        let written = mtime_ms(path);
         fsops::write_atomic(Path::new(path), body.as_bytes()).map_err(|e| fsops::describe(&e))?;
         self.delete_draft(&req.id)?;
         Ok(PersistResult {
-            mtime_ms: Some(mtime_ms(path).max(written)),
+            mtime_ms: Some(mtime_ms(path)),
             conflict: false,
             wrote: true,
             draft: None,
@@ -229,6 +238,34 @@ impl<S: HistoryStore> BufferStore<S> {
             bom: decoded.bom,
             mtime_ms: mtime_ms(path),
         })
+    }
+
+    /// Transfer a listed draft to a new buffer ID without destroying another draft.
+    pub fn claim_draft(&self, entry: &DraftEntry, id: &str, owner: &str) -> Result<(), String> {
+        let old_key = format!("{DRAFT_PREFIX}{}", entry.id);
+        let new_key = draft_key(id)?;
+        let raw = self.store.get(&old_key)?.ok_or("Draft no longer exists")?;
+        if old_key != new_key && self.store.get(&new_key)?.is_some() {
+            return Err("Another draft already exists for this document in this window.".into());
+        }
+        let mut record: DraftRecord = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        record.owner = Some(owner.to_owned());
+        self.store.set(&new_key, &serde_json::to_string(&record).map_err(|e| e.to_string())?)?;
+        if old_key != new_key { self.store.delete(&old_key)?; }
+        Ok(())
+    }
+
+    /// Restore a removed file only if nobody has recreated it in the meantime.
+    pub fn restore_missing(&self, req: &PersistRequest) -> Result<f64, String> {
+        use std::io::Write;
+        let path = req.path.as_deref().ok_or("This draft has no file path")?;
+        safe_path(path)?;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(path)
+            .map_err(|e| fsops::describe(&e))?;
+        file.write_all(encode_for_disk(&req.text, &req.eol, req.bom).as_bytes()).map_err(|e| fsops::describe(&e))?;
+        file.sync_all().map_err(|e| fsops::describe(&e))?;
+        self.delete_draft(&req.id)?;
+        Ok(mtime_ms(path))
     }
 }
 
@@ -350,6 +387,50 @@ mod tests {
         assert_eq!(loaded.text, "a\nb\n");
         assert_eq!(loaded.eol, "\r\n");
         assert!(loaded.bom);
+    }
+
+    #[test]
+    fn full_path_ids_are_safe_for_conflict_drafts() {
+        let store = BufferStore::new(MemoryStore::default());
+        let mut req = request(Some("C:\\My Notes\\note.md".into()), "local", None);
+        req.id = "C:\\My Notes\\note.md".into();
+        req.conflict = true;
+        assert!(store.persist(req.clone()).unwrap().conflict);
+        assert_eq!(store.drafts().unwrap()[0].record.text, "local");
+        store.delete_draft(&req.id).unwrap();
+        assert!(store.drafts().unwrap().is_empty());
+    }
+
+    #[test]
+    fn empty_file_draft_can_be_listed_and_claimed() {
+        let store = BufferStore::new(MemoryStore::default());
+        let mut req = request(Some("C:\\notes\\a.md".into()), "", None);
+        req.id = "old|a".into();
+        req.conflict = true;
+        req.eol = "\r\n".into();
+        req.bom = true;
+        store.persist(req).unwrap();
+        let draft = store.drafts().unwrap().pop().unwrap();
+        assert_eq!(draft.record.text, "");
+        assert!(draft.record.bom);
+        assert_eq!(draft.record.eol, "\r\n");
+        store.claim_draft(&draft, "main|a", "main").unwrap();
+        let claimed = store.drafts().unwrap();
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].record.owner.as_deref(), Some("main"));
+        store.delete_draft("main|a").unwrap();
+        assert!(store.drafts().unwrap().is_empty());
+    }
+
+    #[test]
+    fn missing_existing_file_is_kept_as_a_conflict_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("moved.md").to_string_lossy().into_owned();
+        let store = BufferStore::new(MemoryStore::default());
+        let result = store.persist(request(Some(path.clone()), "unsaved", Some(123.0))).unwrap();
+        assert!(result.conflict);
+        assert!(!Path::new(&path).exists());
+        assert_eq!(store.drafts().unwrap()[0].record.text, "unsaved");
     }
 
     #[test]

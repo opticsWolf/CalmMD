@@ -82,6 +82,7 @@ pub fn search(root: &Path, query: &str, case_sensitive: bool, whole_word: bool) 
                 continue;
             }
             let Ok(ft) = e.file_type() else { continue };
+            if ft.is_symlink() { continue; }
             let path = e.path();
             if ft.is_dir() {
                 if !SKIP_DIRS.contains(&name.as_str()) {

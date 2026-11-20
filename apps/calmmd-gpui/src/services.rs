@@ -123,6 +123,7 @@ impl Services {
         );
 
         let workspace = WorkspaceRegistry::new(context.clone());
+        workspace.reject_dirty_tool_writes();
         let autosave = Arc::new(create_app_autosave(&context));
         let session_store = app_store(&context);
         let history = app_history(&context);

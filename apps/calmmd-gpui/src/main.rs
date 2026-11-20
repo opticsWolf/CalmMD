@@ -6,6 +6,7 @@ mod single_instance;
 mod state;
 mod theme;
 mod ui;
+mod menu_dialogs;
 
 use platform::{NativePlatform, Platform};
 use calmmd_core::core::dto::WorkspaceSnapshotDto;
@@ -120,7 +121,7 @@ fn main() {
 
     let launch_tx = services.event_sender.clone();
     let open_urls_tx = launch_tx.clone();
-    let app = gpui_kit::application();
+    let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
     app.on_open_urls(move |urls| {
         let paths: Vec<String> = urls
             .into_iter()

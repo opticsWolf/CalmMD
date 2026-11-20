@@ -65,6 +65,7 @@ pub struct MarkdownEditor {
     spell_decorations: TextDecorationCollection,
     search_decorations: TextDecorationCollection,
     last_text: SharedString,
+    last_decorated_text: SharedString,
     last_spell_language: Option<String>,
     last_search_query: String,
     _change: Subscription,
@@ -80,8 +81,8 @@ impl MarkdownEditor {
         let input = cx.new(|cx| {
             EditorState::new(window, cx)
                 .language("markdown")
-                .line_number(true)
-                .folding(true)
+                .line_number(false)
+                .folding(false)
                 .default_value(text)
         });
         let (spell_decorations, search_decorations) = input.update(cx, |editor, cx| {
@@ -105,6 +106,7 @@ impl MarkdownEditor {
             spell_decorations,
             search_decorations,
             last_text: text.into(),
+            last_decorated_text: "".into(),
             last_spell_language: None,
             last_search_query: String::new(),
             _change: change,
@@ -118,7 +120,9 @@ impl MarkdownEditor {
         if self.last_text.as_ref() == text {
             return;
         }
-        self.input.update(cx, |editor, cx| editor.set_value(text, window, cx));
+        if self.input.read(cx).value().as_ref() != text {
+            self.input.update(cx, |editor, cx| editor.set_value(text, window, cx));
+        }
         self.last_text = text.into();
     }
 
@@ -133,16 +137,16 @@ impl MarkdownEditor {
     ) {
         let language_changed = self.last_spell_language.as_deref() != spell_language;
         let search_changed = self.last_search_query != search_query;
-        let text_changed = self.last_text.as_ref() != text;
+        let text_changed = self.last_decorated_text.as_ref() != text;
         if !language_changed && !search_changed && !text_changed {
             return;
         }
         self.last_spell_language = spell_language.map(str::to_owned);
         self.last_search_query = search_query.to_owned();
+        self.last_decorated_text = text.into();
 
-        let misspelled = spell::check_text(context, text, spell_language)
-            .ok()
-            .flatten()
+        let misspelled = spell_language
+            .and_then(|language| spell::check_text(context, text, Some(language)).ok().flatten())
             .unwrap_or_default();
         let spell: Vec<TextDecoration> = misspelled
             .into_iter()

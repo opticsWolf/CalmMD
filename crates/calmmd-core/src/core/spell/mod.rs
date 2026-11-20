@@ -276,6 +276,14 @@ mod tests {
     }
 
     #[test]
+    fn fixture_english_words_are_not_misspelled() {
+        let text = "CalmMD should feel like a finished page while the source stays one keystroke away. The interface is deliberately quiet";
+        let (aff, dic) = dictionary::parts_for_bundled("en_US").unwrap();
+        let found = check_text_with_parts(text, "en_US", aff, dic, "").unwrap().unwrap();
+        assert!(found.len() < 5, "unexpected spell ranges: {found:?}");
+    }
+
+    #[test]
     fn personal_words_are_accepted_and_sorted() {
         let stored = add_personal_word("", "calmmd");
         let stored = add_personal_word(&stored, "Zettel");

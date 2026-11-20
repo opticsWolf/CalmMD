@@ -34,22 +34,22 @@ fn apply(cx: &mut App, mode: ThemeMode) {
     let dark = mode.is_dark();
     Theme::update(cx, |theme| {
         theme.mode = mode;
-        theme.font_size = px(18.0);
-        theme.mono_font_size = px(20.0);
+        theme.font_size = px(16.0);
+        theme.mono_font_size = px(18.0);
         theme.radius = px(8.0);
         theme.radius_lg = px(10.0);
 
-        theme.background = if dark { rgb(0x131722).into() } else { rgb(0xfaf8f4).into() };
-        theme.foreground = if dark { rgb(0xe6e7eb).into() } else { rgb(0x2a2d34).into() };
-        theme.muted = if dark { rgb(0x202737).into() } else { rgb(0xf2efe8).into() };
-        theme.muted_foreground = if dark { rgb(0x9aa3b2).into() } else { rgb(0x5f6471).into() };
+        theme.background = if dark { rgb(0x16191f).into() } else { rgb(0xffffff).into() };
+        theme.foreground = if dark { rgb(0xd6dae1).into() } else { rgb(0x24272e).into() };
+        theme.muted = if dark { rgb(0x232833).into() } else { rgb(0xf5f6f8).into() };
+        theme.muted_foreground = if dark { rgb(0x9aa1ad).into() } else { rgb(0x565d6a).into() };
         theme.border = if dark { rgb(0x303746).into() } else { rgb(0xe4ded2).into() };
         theme.accent = rgb(0xe8a23b).into();
         theme.accent_foreground = rgb(0x1f2a44).into();
         theme.link = if dark { rgb(0x8ab4ff).into() } else { rgb(0x2f5e9e).into() };
         theme.caret = if dark { rgb(0xe8a23b).into() } else { rgb(0x1f2a44).into() };
         theme.selection = translucent(0xe8a23b, 0.26);
-        theme.button = if dark { rgb(0x202737).into() } else { rgb(0xf2efe8).into() };
+        theme.button = theme.muted;
         theme.button_foreground = theme.foreground;
         theme.input = theme.background;
     });
