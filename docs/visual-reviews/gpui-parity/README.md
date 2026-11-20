@@ -1,6 +1,6 @@
 # GPUI ↔ Tauri visual parity pass
 
-The two screenshots were taken from maximized desktop windows at 1550×830 with the same five-document
+The two screenshots were taken from regular desktop windows at 1400×900 with the same five-document
 fixture in `fixture/`. Both use the dark palette.
 
 | Shell | Capture |
@@ -20,7 +20,13 @@ fixture in `fixture/`. Both use the dark palette.
   History header, a search box, the folder name and a document list, with utilities in a footer.
 - The editor gained a document tab and a small real-action toolbar (Save, Undo, Redo, Copy Markdown).
 - Front matter renders as a quiet amber-ruled source block instead of Kit's description list.
-- Body and mono font sizes were raised to 18 px / 16 px, closer to the Tauri split view.
+- Body and mono font sizes were raised to 18 px / 20 px, so source wrapping and line density match
+  the Tauri split view.
+- A local title row plus Tauri's Space selector and favourites hint make the sidebar and chrome read
+  as the same product.
+- The default spell language is now the bundled US English dictionary, so misspellings get the same
+  visible diagnostics as the incumbent shell.
+- Preview padding was increased from 12 px to 28 px, matching Tauri's reading gutter.
 
 ## Still different
 
@@ -30,6 +36,6 @@ fixture in `fixture/`. Both use the dark palette.
   search only.
 - Preview parity is structural but Mermaid, KaTeX and custom CSS themes are still native
   approximations.
-- Light-mode captures and per-OS font fallback checks are still pending.
+- Light-mode captures, richer toolbar controls and per-OS font fallback checks are still pending.
 
 Captures can be reproduced with `scripts/capture-desktop.ps1` once both apps are open on the fixture.

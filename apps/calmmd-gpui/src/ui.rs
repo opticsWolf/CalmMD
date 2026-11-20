@@ -310,7 +310,7 @@ impl AppView {
         dock.update(cx, |dock, cx| {
             dock.set_center(
                 DockLayout::h_split()
-                    .child(DockLayout::tabs().panel(sidebar), Some(px(240.0)))
+                    .child(DockLayout::tabs().panel(sidebar), Some(px(272.0)))
                     .child(
                         DockLayout::v_split()
                             .child(
@@ -359,10 +359,22 @@ impl AppView {
 impl Render for AppView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.clone();
-        let background = Theme::global(cx).background;
+        let theme = Theme::global(cx);
+        let background = theme.background;
+        let title = self.state.read(cx).title();
         let mut root = div().v_flex().size_full();
         #[cfg(not(target_os = "macos"))]
         {
+            // Tauri has a title row above its menu row. GPUI draws both locally so the split view
+            // starts at the same vertical offset.
+            root = root.child(
+                div()
+                    .h(px(26.0))
+                    .flex_shrink_0()
+                    .bg(background)
+                    .px(px(12.0))
+                    .child(Label::new(format!("{title} — CalmMD")).text_color(theme.muted_foreground)),
+            );
             // AppMenuBar fills its parent. Without a fixed-height wrapper it consumes the whole
             // window and leaves the dock zero pixels tall.
             root = root.child(
@@ -487,13 +499,25 @@ impl Render for SidebarPanel {
 
         let mut column = div().v_flex().size_full().bg(theme.background);
         column = column.child(
+            div().px(px(12.0)).pt(px(10.0)).pb(px(8.0)).child(
+                Button::new("space-selector")
+                    .label("No Space")
+                    .compact(),
+            ),
+        );
+        column = column.child(
             div()
                 .h_flex()
                 .px(px(12.0))
-                .pt(px(10.0))
-                .pb(px(4.0))
+                .pb(px(2.0))
                 .gap(px(6.0))
                 .child(Label::new("FAVOURITES")),
+        );
+        column = column.child(
+            div().px(px(12.0)).pb(px(8.0)).child(
+                Label::new("Star a file or folder to keep it here.")
+                    .text_color(theme.muted_foreground),
+            ),
         );
         column = column.child(
             div()
@@ -665,7 +689,14 @@ impl Render for EditorPanel {
                     .gap(px(6.0))
                     .bg(theme.muted)
                     .child(Button::new("editor-tab").label(title).compact())
-                    .child(Label::new("×")),
+                    .child(Label::new("×"))
+                    .child(div().flex_1())
+                    .child(
+                        Button::new("editor-new-tab")
+                            .label("+")
+                            .compact()
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(NewDocument), cx)),
+                    ),
             )
             .child(
                 div()
@@ -747,7 +778,7 @@ impl Render for PreviewPanel {
                 state.update(cx, |state, cx| state.open_link(&target, cx));
             });
         let _ = window;
-        div().size_full().p(px(12.0)).child(view)
+        div().size_full().p(px(28.0)).child(view)
     }
 }
 

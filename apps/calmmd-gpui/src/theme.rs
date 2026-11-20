@@ -35,7 +35,7 @@ fn apply(cx: &mut App, mode: ThemeMode) {
     Theme::update(cx, |theme| {
         theme.mode = mode;
         theme.font_size = px(18.0);
-        theme.mono_font_size = px(16.0);
+        theme.mono_font_size = px(20.0);
         theme.radius = px(8.0);
         theme.radius_lg = px(10.0);
 

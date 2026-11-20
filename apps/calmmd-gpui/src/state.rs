@@ -101,7 +101,7 @@ impl WorkspaceState {
             message: "Ready".into(),
             search_query: String::new(),
             search_results: Vec::new(),
-            spell_language: None,
+            spell_language: default_spell_language(),
             autosave_status: "clean".into(),
             conflict: false,
             dirty: false,
@@ -606,6 +606,10 @@ fn parent_dir(path: &str) -> String {
         .unwrap_or_default()
 }
 
+fn default_spell_language() -> Option<String> {
+    Some("en-US".to_owned())
+}
+
 fn documents_from_value(value: &Value) -> Option<Vec<DocumentItem>> {
     let entries = value.as_array()?;
     Some(
@@ -625,6 +629,11 @@ fn documents_from_value(value: &Value) -> Option<Vec<DocumentItem>> {
 mod tests {
     use super::documents_from_value;
     use serde_json::json;
+
+    #[test]
+    fn bundled_english_is_the_default_spell_language() {
+        assert_eq!(super::default_spell_language().as_deref(), Some("en-US"));
+    }
 
     #[test]
     fn document_list_is_read_from_the_array_shape_returned_by_core() {
