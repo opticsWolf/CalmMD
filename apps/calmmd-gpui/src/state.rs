@@ -532,18 +532,8 @@ impl WorkspaceState {
             .workspace
             .list_documents(&self.window_label, true, None)
             .ok()
-            .and_then(|value| {
-                serde_json::from_value::<Vec<Value>>(value.get("documents")?.clone()).ok()
-            })
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|value| {
-                Some(DocumentItem {
-                    path: value.get("path")?.as_str()?.to_owned(),
-                    name: value.get("name")?.as_str()?.to_owned(),
-                })
-            })
-            .collect();
+            .and_then(|value| documents_from_value(&value))
+            .unwrap_or_default();
     }
 
     fn apply_workspace_event(&mut self, event: &CoreEvent) {
@@ -614,4 +604,36 @@ fn parent_dir(path: &str) -> String {
         .parent()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+fn documents_from_value(value: &Value) -> Option<Vec<DocumentItem>> {
+    let entries = value.as_array()?;
+    Some(
+        entries
+            .iter()
+            .filter_map(|entry| {
+                Some(DocumentItem {
+                    path: entry.get("path")?.as_str()?.to_owned(),
+                    name: entry.get("name")?.as_str()?.to_owned(),
+                })
+            })
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::documents_from_value;
+    use serde_json::json;
+
+    #[test]
+    fn document_list_is_read_from_the_array_shape_returned_by_core() {
+        let value = json!([
+            { "path": "a.md", "name": "a.md", "open": false },
+            { "path": "b.md", "name": "b.md", "open": true }
+        ]);
+        let documents = documents_from_value(&value).unwrap();
+        assert_eq!(documents.len(), 2);
+        assert_eq!(documents[1].path, "b.md");
+    }
 }

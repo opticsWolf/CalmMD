@@ -112,6 +112,9 @@ next milestone is a full native shell migration; it is a UI rewrite, not a depen
   has File/Edit/View menus, a native/drawn context menu, URL allow-listing, drag-and-drop launch
   paths and single-instance launch queueing. See `docs/visual-reviews/gpui-phases-14-15.md` and
   `docs/PLATFORM-LIMITS.md`.
+- **GPUI visual parity pass:** maximized Tauri and GPUI captures with the same five-document fixture
+  are stored in `docs/visual-reviews/gpui-parity/`. The pass fixed the zero-height dock, first-window
+  label, empty sidebar list, oversized utility stack, front-matter presentation and font sizes.
 - **Phase 16 — implemented:** MCP now starts in the default GPUI shell with `--mcp` and in a new
   headless `calmmd-mcp` binary built from `calmmd-core`. Both passed the 49-check smoke without the
   webview export bridge.

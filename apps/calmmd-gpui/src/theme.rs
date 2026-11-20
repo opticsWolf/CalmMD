@@ -20,11 +20,12 @@ pub fn init(cx: &mut App) {
 
 /// Switches between the Snow/Paper light and Ink dark palettes.
 pub fn toggle(cx: &mut App) {
-    let mode = if Theme::global(cx).mode.is_dark() {
-        ThemeMode::Light
-    } else {
-        ThemeMode::Dark
-    };
+    set(cx, !Theme::global(cx).mode.is_dark());
+}
+
+/// Selects a palette explicitly, also used by screenshot automation.
+pub fn set(cx: &mut App, dark: bool) {
+    let mode = if dark { ThemeMode::Dark } else { ThemeMode::Light };
     Theme::change(mode, None, cx);
     apply(cx, mode);
 }
@@ -33,8 +34,8 @@ fn apply(cx: &mut App, mode: ThemeMode) {
     let dark = mode.is_dark();
     Theme::update(cx, |theme| {
         theme.mode = mode;
-        theme.font_size = px(14.0);
-        theme.mono_font_size = px(13.0);
+        theme.font_size = px(18.0);
+        theme.mono_font_size = px(16.0);
         theme.radius = px(8.0);
         theme.radius_lg = px(10.0);
 

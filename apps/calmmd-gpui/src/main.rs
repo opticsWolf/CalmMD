@@ -46,6 +46,13 @@ fn data_dir() -> PathBuf {
     std::env::temp_dir().join("CalmMD")
 }
 
+fn value_arg(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .cloned()
+}
+
 fn open_paths_event(paths: Vec<String>) -> CoreEvent {
     CoreEvent {
         target: None,
@@ -68,6 +75,10 @@ fn main() {
             idx += 1;
         }
     }
+    let dark_theme = value_arg(&args, "--theme")
+        .map(|value| value.eq_ignore_ascii_case("dark"))
+        .or_else(|| std::env::var_os("CALMMD_THEME").map(|value| value == "dark"))
+        .unwrap_or(false);
     let mcp_enabled = args.iter().any(|arg| arg == "--mcp")
         || std::env::var_os("CALMMD_MCP").is_some_and(|value| value != "0");
     let Some(_lock) = InstanceLock::acquire(&data_dir) else {
@@ -127,6 +138,9 @@ fn main() {
     app.run(move |cx| {
         gpui_kit::init(cx);
         theme::init(cx);
+        if dark_theme {
+            theme::set(cx, true);
+        }
 
         // The receiver is moved out once, when the GPUI event bridge is installed.
         let rx = Arc::get_mut(&mut services)

@@ -17,12 +17,12 @@ use gpui_kit::{
         label::Label,
         menu::AppMenuBar,
         native_menu::NativeMenu,
+        theme::Theme,
     },
     *,
 };
-use calmmd_core::WindowRegistry;
 use serde_json::Value;
-use gpui_kit::base::StyledExt;
+use gpui_kit::{base::StyledExt, prelude::FluentBuilder};
 use std::sync::{Arc, Mutex};
 
 gpui_kit::actions!(
@@ -250,11 +250,9 @@ fn open_shell_window(
     platform: Arc<dyn Platform>,
     windows: WindowList,
 ) {
-    let label = if services.windows.windows().is_empty() {
-        "main".to_owned()
-    } else {
-        format!("window-{}", services.windows.windows().len() + 1)
-    };
+    // The core registry starts with "main", so count actual shell windows here. The first window
+    // must use "main" too, or the restored session and MCP's default target are not visible.
+    let label = window_label(windows.0.lock().unwrap().len());
     services.windows.register(&label);
 
     let (handle, view) = gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
@@ -359,12 +357,21 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.clone();
-        let mut root = div().size_full();
+        let background = Theme::global(cx).background;
+        let mut root = div().v_flex().size_full();
         #[cfg(not(target_os = "macos"))]
         {
-            root = root.child(self.menu.clone());
+            // AppMenuBar fills its parent. Without a fixed-height wrapper it consumes the whole
+            // window and leaves the dock zero pixels tall.
+            root = root.child(
+                div()
+                    .h(px(28.0))
+                    .flex_shrink_0()
+                    .bg(background)
+                    .child(self.menu.clone()),
+            );
         }
         root.can_drop(|value, _, _| value.downcast_ref::<ExternalPaths>().is_some())
             .on_drop::<ExternalPaths>(move |paths, _, cx| {
@@ -386,7 +393,15 @@ impl Render for AppView {
                     .menu("Toggle Theme", Box::new(ToggleTheme))
                     .show(event.position, window, cx);
             })
-            .child(self.dock.clone())
+            .child(div().flex_1().child(self.dock.clone()))
+    }
+}
+
+fn window_label(open_windows: usize) -> String {
+    if open_windows == 0 {
+        "main".to_owned()
+    } else {
+        format!("window-{}", open_windows + 1)
     }
 }
 
@@ -450,7 +465,7 @@ impl Focusable for SidebarPanel {
 }
 impl BasePanel for SidebarPanel {
     fn panel_name(&self) ->  &'static str {
-        "calmmd-sidebar".into()
+"Files"
     }
 }
 
@@ -463,95 +478,132 @@ impl Panel for SidebarPanel {
 impl Render for SidebarPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let mut column = div().v_flex().gap(px(6.0)).p(px(10.0)).size_full();
+        let theme = Theme::global(cx);
+        let root_name = state
+            .root()
+            .and_then(|path| path.rsplit(['/', '\\']).find(|part| !part.is_empty()))
+            .unwrap_or("No folder");
+        let active = state.active().unwrap_or("");
+
+        let mut column = div().v_flex().size_full().bg(theme.background);
         column = column.child(
-            Button::new("open-folder")
-                .label("Open folder")
-                .on_click(cx.listener(|this, _, _window, cx| {
-                    let platform = this.platform.clone();
-                    let state = this.state.clone();
-                    cx.spawn(async move |_, cx| {
-                        if let Some(path) = platform.open_folder() {
-                            let _ = state.update(cx, |state, cx| state.open_folder(path, cx));
-                        }
-                    })
-                    .detach();
-                })),
+            div()
+                .h_flex()
+                .px(px(12.0))
+                .pt(px(10.0))
+                .pb(px(4.0))
+                .gap(px(6.0))
+                .child(Label::new("FAVOURITES")),
         );
         column = column.child(
-            Button::new("new-document")
-                .label("New document")
-                .on_click(cx.listener(|this, _, _window, cx| {
-                    this.state
-                        .update(cx, |state, cx| state.create_document("Untitled.md", cx));
-                })),
+            div()
+                .h_flex()
+                .px(px(12.0))
+                .pb(px(6.0))
+                .gap(px(4.0))
+                .child(
+                    Button::new("side-files")
+                        .label("Files")
+                        .compact()
+                        .bg(theme.accent),
+                )
+                .child(Label::new("Outline"))
+                .child(Label::new("Search"))
+                .child(Label::new("History")),
         );
+        column = column.child(div().px(px(12.0)).pb(px(8.0)).child(Input::new(&self.search)));
         column = column.child(
-            Button::new("save-document")
-                .label("Save")
-                .on_click(cx.listener(|this, _, _window, cx| {
-                    this.state.update(cx, |state, cx| state.save_active(cx));
-                })),
+            div()
+                .h_flex()
+                .px(px(12.0))
+                .py(px(6.0))
+                .gap(px(6.0))
+                .child(Label::new(root_name)),
         );
-        column = column.child(
-            Button::new("undo-document")
-                .label("Undo tool edit")
-                .on_click(cx.listener(|this, _, _window, cx| {
-                    this.state.update(cx, |state, cx| state.undo_active(cx));
-                })),
-        );
-        column = column.child(
-            Button::new("redo-document")
-                .label("Redo tool edit")
-                .on_click(cx.listener(|this, _, _window, cx| {
-                    this.state.update(cx, |state, cx| state.redo_active(cx));
-                })),
-        );
-        column = column.child(Input::new(&self.search));
+
+        if state.root().is_none() {
+            column = column.child(
+                div().px(px(12.0)).child(
+                    Button::new("open-folder")
+                        .label("Open folder")
+                        .compact()
+                        .on_click(cx.listener(|this, _, _window, cx| {
+                            let platform = this.platform.clone();
+                            let state = this.state.clone();
+                            cx.spawn(async move |_, cx| {
+                                if let Some(path) = platform.open_folder() {
+                                    let _ = state.update(cx, |state, cx| state.open_folder(path, cx));
+                                }
+                            })
+                            .detach();
+                        })),
+                ),
+            );
+        }
+
+        for document in state.documents() {
+            let path = document.path.clone();
+            let state = self.state.clone();
+            let selected = document.path == active;
+            column = column.child(
+                div().px(px(8.0)).child(
+                    Button::new(ElementId::Name(format!("open-document:{path}").into()))
+                        .label(document.name.clone())
+                        .compact()
+                        .when(selected, |button| button.bg(theme.selection))
+                        .on_click(move |_, _window, cx| {
+                            state.update(cx, |state, cx| state.open_document(&path, cx));
+                        }),
+                ),
+            );
+        }
+
         for hit in state.search_results() {
             let path = hit.path.clone();
             let state = self.state.clone();
             column = column.child(
-                Button::new(ElementId::Name(format!("search-hit:{path}:{}", hit.line).into()))
-                    .label(format!("{}:{} {}", hit.path.rsplit(['/', '\\']).next().unwrap_or(&hit.path), hit.line + 1, hit.text.trim()))
-                    .on_click(move |_, _window, cx| {
-                        state.update(cx, |state, cx| state.open_document(&path, cx));
-                    }),
+                div().px(px(8.0)).child(
+                    Button::new(ElementId::Name(format!("search-hit:{path}:{}", hit.line).into()))
+                        .label(format!(
+                            "{}:{} {}",
+                            hit.path.rsplit(['/', '\\']).next().unwrap_or(&hit.path),
+                            hit.line + 1,
+                            hit.text.trim()
+                        ))
+                        .compact()
+                        .on_click(move |_, _window, cx| {
+                            state.update(cx, |state, cx| state.open_document(&path, cx));
+                        }),
+                ),
             );
         }
-        column = column.child(
-            Button::new("new-window")
-                .label("New window")
-                .on_click(|_, window, cx| window.dispatch_action(Box::new(NewWindow), cx)),
-        );
-        column = column.child(
-            Button::new("next-window")
-                .label("Next window")
-                .on_click(|_, window, cx| window.dispatch_action(Box::new(NextWindow), cx)),
-        );
-        column = column.child(
-            Button::new("close-window")
-                .label("Close window")
-                .on_click(|_, window, cx| window.dispatch_action(Box::new(CloseWindow), cx)),
-        );
-        column = column.child(Label::new(
-            state
-                .root()
-                .map(|path| format!("Root: {path}"))
-                .unwrap_or_else(|| "No folder open".into()),
-        ));
-        for document in state.documents() {
-            let path = document.path.clone();
-            let state = self.state.clone();
-            column = column.child(
-                Button::new(ElementId::Name(format!("open-document:{path}").into()))
-                    .label(document.name.clone())
-                    .on_click(move |_, _window, cx| {
-                        state.update(cx, |state, cx| state.open_document(&path, cx));
-                    }),
-            );
-        }
-        column
+
+        column = column.child(div().flex_1());
+        column.child(
+            div()
+                .h_flex()
+                .px(px(10.0))
+                .py(px(8.0))
+                .gap(px(4.0))
+                .child(
+                    Button::new("new-document")
+                        .label("New")
+                        .compact()
+                        .on_click(|_, window, cx| window.dispatch_action(Box::new(NewDocument), cx)),
+                )
+                .child(
+                    Button::new("save-document")
+                        .label("Save")
+                        .compact()
+                        .on_click(|_, window, cx| window.dispatch_action(Box::new(SaveDocument), cx)),
+                )
+                .child(
+                    Button::new("open-folder-footer")
+                        .label("Folder")
+                        .compact()
+                        .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenFolder), cx)),
+                ),
+        )
     }
 }
 
@@ -576,7 +628,7 @@ impl Focusable for EditorPanel {
 }
 impl BasePanel for EditorPanel {
     fn panel_name(&self) ->  &'static str {
-        "calmmd-editor".into()
+"Editor"
     }
 }
 
@@ -599,9 +651,54 @@ impl Render for EditorPanel {
         };
         self.editor.sync_text(&text, window, cx);
         self.editor.refresh_decorations(&context, &text, language.as_deref(), &query, cx);
+        let title = self.state.read(cx).title();
+        let theme = Theme::global(cx);
         div()
             .v_flex()
             .size_full()
+            .child(
+                div()
+                    .h_flex()
+                    .h(px(34.0))
+                    .flex_shrink_0()
+                    .px(px(10.0))
+                    .gap(px(6.0))
+                    .bg(theme.muted)
+                    .child(Button::new("editor-tab").label(title).compact())
+                    .child(Label::new("×")),
+            )
+            .child(
+                div()
+                    .h_flex()
+                    .h(px(30.0))
+                    .flex_shrink_0()
+                    .px(px(10.0))
+                    .gap(px(4.0))
+                    .child(
+                        Button::new("toolbar-save")
+                            .label("Save")
+                            .compact()
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(SaveDocument), cx)),
+                    )
+                    .child(
+                        Button::new("toolbar-undo")
+                            .label("Undo")
+                            .compact()
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(UndoDocument), cx)),
+                    )
+                    .child(
+                        Button::new("toolbar-redo")
+                            .label("Redo")
+                            .compact()
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(RedoDocument), cx)),
+                    )
+                    .child(
+                        Button::new("toolbar-copy")
+                            .label("Copy Markdown")
+                            .compact()
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(CopyMarkdown), cx)),
+                    ),
+            )
             .child(Editor::new(&self.editor.input).h(gpui_kit::relative(1.0)))
     }
 }
@@ -630,7 +727,7 @@ impl Focusable for PreviewPanel {
 }
 impl BasePanel for PreviewPanel {
     fn panel_name(&self) ->  &'static str {
-        "calmmd-preview".into()
+"Preview"
     }
 }
 
@@ -734,6 +831,12 @@ impl Render for StatusPanel {
 #[cfg(test)]
 mod tests {
     use super::app_menus;
+
+    #[test]
+    fn first_window_uses_the_core_main_label() {
+        assert_eq!(super::window_label(0), "main");
+        assert_eq!(super::window_label(1), "window-2");
+    }
 
     #[test]
     fn app_menus_cover_file_edit_and_view_actions() {

@@ -8,9 +8,10 @@ use crate::{platform::Platform, state::WorkspaceState};
 use gpui_kit::{
     component::{
         button::Button,
+        theme::Theme,
         label::Label,
         text::{
-            FrontmatterPlugin, MarkdownExtensions, MarkdownNode, MarkdownParseContext, MarkdownPlugin,
+            MarkdownExtensions, MarkdownNode, MarkdownParseContext, MarkdownPlugin,
             TextView, markdown_ast,
         },
     },
@@ -261,6 +262,43 @@ impl MarkdownPlugin for WikiLinkPlugin {
     }
 }
 
+/// CalmMD renders front matter as a quiet source block, matching the webview preview instead of
+/// Kit's description-list presentation.
+struct FrontmatterCard;
+
+impl MarkdownPlugin for FrontmatterCard {
+    fn name(&self) -> &str {
+        "frontmatter"
+    }
+
+    fn is_block(&self) -> bool {
+        true
+    }
+
+    fn parse(&self, node: &markdown_ast::Node, cx: &MarkdownParseContext<'_>) -> Option<MarkdownNode> {
+        let markdown_ast::Node::Yaml(yaml) = node else { return None };
+        let source = cx.node_source(node).unwrap_or(&yaml.value).trim();
+        Some(
+            MarkdownNode::new(self.name(), source.to_owned())
+                .text(source.to_owned())
+                .markdown(source.to_owned()),
+        )
+    }
+
+    fn render(&self, node: &MarkdownNode, _window: &mut Window, cx: &mut gpui_kit::App) -> impl IntoElement {
+        let text = node.data::<String>().cloned().unwrap_or_default();
+        let theme = Theme::global(cx);
+        gpui_kit::div()
+            .v_flex()
+            .p(px(10.0))
+            .rounded_md()
+            .border_l_2()
+            .border_color(theme.accent)
+            .bg(theme.muted)
+            .child(Label::new(text).text_color(theme.muted_foreground))
+    }
+}
+
 /// Builds the Markdown extension registry used by the preview.
 pub fn extensions(
     state: Entity<WorkspaceState>,
@@ -269,7 +307,7 @@ pub fn extensions(
     let mut extensions = MarkdownExtensions::default()
         .frontmatter()
         .raw_html(false)
-        .plugin(FrontmatterPlugin::new())
+        .plugin(FrontmatterCard)
         .plugin(MathPlugin)
         .plugin(MermaidPlugin)
         .plugin(EmbedPlugin { platform })

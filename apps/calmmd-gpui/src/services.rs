@@ -128,7 +128,11 @@ impl Services {
         let history = app_history(&context);
 
         // Restore the last folder and active note so MCP sees the same live state as the shell.
-        if let Ok(Some(session)) = session_store.session("main") {
+        let restored = session_store
+            .session("session")
+            .or_else(|_| session_store.session("main"))
+            .unwrap_or(None);
+        if let Some(session) = restored {
             if let Some(root) = session.root.filter(|root| std::path::Path::new(root).is_dir()) {
                 let active = session
                     .tabs
