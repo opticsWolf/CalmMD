@@ -97,20 +97,22 @@ Neither shell has an MCP SDK in its view code. Protocol, auth and tool logic sta
 
 ### 3.2 Transport and security
 
-- Endpoint: `http://127.0.0.1:<random-port>/mcp`
+- Endpoint: `http://127.0.0.1:<port>/mcp`, remembered between launches
 - Transport: MCP Streamable HTTP (POST/GET, JSON or SSE responses)
 - Authentication: `Authorization: Bearer <token>`
-- Token: generated per launch with `uuid::Uuid::new_v4()`
+- Token: generated with `uuid::Uuid::new_v4()`, then reused; `New MCP Token` rotates it
 - `Origin`: accepted only when absent/`null` or from `localhost`, `127.0.0.1`, or `::1`
-- Binding: `127.0.0.1:0` only; never `0.0.0.0`
+- Binding: `127.0.0.1` only; never `0.0.0.0`. The remembered port is reused when free, otherwise
+  the server retries briefly and falls back to an ephemeral port
 - Start triggers:
   - File → Start MCP Server
   - command palette: `Start MCP Server`
   - `--mcp` launch argument
   - `mcpAutostart` setting (off by default)
 
-The server does not implement OAuth. For a loopback, single-user endpoint a per-launch bearer
-token is sufficient and matches CalmMD's no-account privacy model.
+The server does not implement OAuth. For a loopback, single-user endpoint a local bearer token is
+sufficient and matches CalmMD's no-account privacy model. The port and token are stored in
+`<app data>/state/mcp~endpoint.kv` and reused, so a client only has to be configured once.
 
 ### 3.3 Request flow
 
@@ -308,9 +310,12 @@ Clients discover them through `resources/list` and `resources/templates/list`.
 ## 6. Configuration and UI
 
 - `mcpAutostart` lives in `src/app/settings.ts`, default `false`.
-- File menu: Start MCP Server, Stop MCP Server, Auto-start MCP Server (checked state from settings).
-- Command palette: same three commands under the `MCP` category.
-- Starting copies `url · token: …` to the clipboard.
+- File menu: Start MCP Server, Stop MCP Server, New MCP Token, Auto-start MCP Server (checked
+  state from settings).
+- Command palette: the same commands under the `MCP` category.
+- Starting copies `url · token: …` to the clipboard; **New MCP Token** restarts the server and
+  copies the rotated string, keeping the port where possible.
+- The endpoint lives in `<app data>/state/mcp~endpoint.kv`; it is never committed or synced.
 - A small `MCP` marker appears in the status bar while the server is enabled.
 
 In the default GPUI shell, `--mcp` (or `CALMMD_MCP=1`) prints `CALMMD_MCP_URL` and
@@ -376,8 +381,8 @@ because no `en-US` OS dictionary is installed; they are unrelated to MCP.
 
 - **No stdio transport.** Some clients only launch stdio servers. A small sidecar or a
   `--mcp-stdio` mode that forwards to the running app would help.
-- **No persisted port/token.** They change every launch. Clients must be reconfigured, or the
-  start command's clipboard payload must be used each time.
+- **The persisted endpoint is a local file, not an OS keychain.** It survives restarts by design;
+  a keychain-backed token would be stronger on shared machines.
 - **Resources are read-only and flat.** There is no resource for a whole Space, no subscriptions,
   and no resource templates with variable routing fields beyond query parameters.
 - **No progress/cancellation notifications** for long exports or large sorts.

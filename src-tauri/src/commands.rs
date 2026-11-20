@@ -313,6 +313,11 @@ pub async fn mcp_stop(manager: State<'_, Arc<McpManager>>) -> Result<McpStatus, 
 }
 
 #[tauri::command]
+pub async fn mcp_new_token(manager: State<'_, Arc<McpManager>>) -> Result<McpStatus, String> {
+    manager.new_token().await
+}
+
+#[tauri::command]
 pub async fn mcp_respond(manager: State<'_, Arc<McpManager>>, response: Value) -> Result<(), String> {
     manager.respond(response).await
 }

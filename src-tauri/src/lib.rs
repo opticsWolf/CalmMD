@@ -116,6 +116,7 @@ pub fn run() {
             commands::mcp_status,
             commands::mcp_start,
             commands::mcp_stop,
+            commands::mcp_new_token,
             commands::mcp_respond,
             commands::markdown_parse,
             commands::markdown_render,

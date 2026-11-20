@@ -292,9 +292,10 @@ See [`MCP.md`](MCP.md) for the full implementation record, tool reference and op
 [`MCP-CLIENT-SETUP.md`](MCP-CLIENT-SETUP.md) for client configuration and discovery.
 
 CalmMD can host a **local MCP server** (`crates/calmmd-core/src/mcp/`, official `rmcp` SDK, Streamable HTTP on
-`127.0.0.1:<random port>/mcp`). It is **off until started** from File → Start MCP Server, the command
-palette, or the `--mcp` launch flag. The connection URL and a per-launch bearer token are copied to
-the clipboard; the server validates the token and the `Origin` header and never binds beyond loopback.
+`127.0.0.1:<port>/mcp`; the port and token are remembered between launches). It is **off until
+started** from File → Start MCP Server, the command palette, or the `--mcp` launch flag. The
+connection URL and bearer token are copied to the clipboard; **New MCP Token** rotates the token.
+The server validates the token and the `Origin` header and never binds beyond loopback.
 
 Most tools call `crates/calmmd-core/src/core/workspace.rs` directly. The webview mirrors live buffers into
 that Rust state with `core_workspace_sync` / `core_workspace_upsert_document`, and Rust emits

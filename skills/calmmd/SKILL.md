@@ -15,8 +15,8 @@ history, tabs and favorites authoritative.
 ## Before you start
 
 1. Confirm CalmMD is running, a folder is open, and the MCP server has been started.
-2. Get the current `url` and bearer token from the user or the connection string CalmMD copied to
-   the clipboard. They change on every launch.
+2. Get the `url` and bearer token from the user or the connection string CalmMD copied to the
+   clipboard. They persist between launches; **New MCP Token** replaces the token.
 3. Discover the surface from the server rather than assuming a fixed list:
    - `tools/list`
    - `prompts/list`
@@ -184,7 +184,7 @@ today's date, exactly like the export dialog. PDF always embeds images.
 - Using raw `write` / `rename` tools instead of the CalmMD MCP tools.
 - Applying a sort without showing the plan first.
 - Assuming `windowLabel` values; call `calmmd_windows`.
-- Forgetting that the bearer token changed after a CalmMD restart.
+- Assuming the bearer token changed after a restart; it persists until **New MCP Token**.
 - Trying to write through a read-only resource URI.
 - Expecting CalmMD to generate summaries itself.
 

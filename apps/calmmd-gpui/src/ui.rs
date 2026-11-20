@@ -72,6 +72,7 @@ gpui_kit::actions!(
         CopyHtml,
         StartMcp,
         StopMcp,
+        NewMcpToken,
         NewWindow,
         CloseWindow,
         NextWindow,
@@ -144,6 +145,7 @@ fn app_menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Start MCP Server", StartMcp),
             MenuItem::action("Stop MCP Server", StopMcp),
+            MenuItem::action("New MCP Token", NewMcpToken),
             MenuItem::separator(),
             MenuItem::action("Reveal in File Manager", RevealDocument),
             MenuItem::separator(),
@@ -387,6 +389,33 @@ fn register_actions(
         cx.spawn(async move |cx| {
             let _ = rx.await;
             let _ = state.update(cx, |state, cx| state.set_message("MCP server stopped".into(), cx));
+        }).detach();
+    });
+
+    let mcp_token_windows = windows.clone();
+    let mcp_token_services = services.clone();
+    cx.on_action(move |_: &NewMcpToken, cx| {
+        let Some(entry) = active_entry(&mcp_token_windows, cx) else { return };
+        let state = entry.view.read(cx).state.clone();
+        let manager = mcp_token_services.mcp.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        mcp_runtime().spawn(async move { let _ = tx.send(manager.new_token().await); });
+        cx.spawn(async move |cx| {
+            let result = rx.await.unwrap_or_else(|_| Err("MCP server task stopped".into()));
+            let _ = cx.update(|cx| match result {
+                Ok(status) if status.enabled => {
+                    if let (Some(url), Some(token)) = (status.url, status.token) {
+                        cx.write_to_clipboard(ClipboardItem::new_string(format!("{url} · token: {token}")));
+                    }
+                    state.update(cx, |state, cx| state.set_message("New MCP token copied".into(), cx));
+                }
+                Ok(_) => state.update(cx, |state, cx| {
+                    state.set_message("Start the MCP server before rotating its token".into(), cx)
+                }),
+                Err(error) => state.update(cx, |state, cx| {
+                    state.set_message(format!("Could not rotate the MCP token: {error}"), cx)
+                }),
+            });
         }).detach();
     });
 

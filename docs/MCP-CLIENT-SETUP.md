@@ -3,8 +3,9 @@
 CalmMD exposes a **local, opt-in MCP server**. This guide shows how to connect a client and verify
 that it can discover the tools and prompts. For the implementation details see [`MCP.md`](MCP.md).
 
-> The server is off by default. It listens only on `127.0.0.1`, and the bearer token changes on
-> every launch. Treat the connection string like a password.
+> The server is off by default. It listens only on `127.0.0.1`. The port and bearer token are
+> remembered between launches so a client is configured once; treat the connection string like a
+> password and rotate it with **File → New MCP Token**.
 
 ---
 
@@ -19,7 +20,8 @@ that it can discover the tools and prompts. For the implementation details see [
    http://127.0.0.1:53123/mcp · token: 8c1f4e3a-...
    ```
 
-   Keep the app running. Stopping the server or restarting CalmMD invalidates the URL/token.
+   Keep the app running. The URL and token survive restarts; only **New MCP Token** replaces
+   them.
 
 Optionally enable **File → Auto-start MCP Server** so this happens on future launches.
 
@@ -73,8 +75,9 @@ Prefer an environment variable over a literal token in a shared config:
 }
 ```
 
-> Because the port and token change on every launch, a static config is mostly useful for quick
-> local testing. Re-copy the connection string from CalmMD after each restart.
+> The port and token persist in CalmMD's local state, so one entry keeps working across restarts.
+> If the remembered port is taken by another process, CalmMD falls back to a free port; start the
+> server again (or use **New MCP Token**) to copy the updated string.
 
 ---
 
@@ -266,8 +269,8 @@ remembered author and today's date.
 
 | Symptom | Check |
 |---|---|
-| `401` / “Needs authentication” | The token is stale; start the server again and copy the new connection string |
-| `404` at `/mcp` | The URL must include `/mcp`; the port changes every launch |
+| `401` / “Needs authentication” | The token was rotated; use **New MCP Token** and copy the new string |
+| `404` at `/mcp` | The URL must include `/mcp`; re-check the port if it had to rebind |
 | Connection refused | CalmMD was closed, the server was stopped, or the app is running in browser mode |
 | `Open a folder in CalmMD first` | MCP paths are resolved against the open folder's root |
 | `That path is outside the open folder` | Use a relative path inside the root, or fix the `windowLabel`/`spaceId` target |
