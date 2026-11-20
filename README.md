@@ -19,7 +19,8 @@
 
 **CalmMD is a quiet place to write.** Type Markdown and watch it become a beautiful page, then
 export a PDF worth sending. Your notes stay plain `.md` files in your own folders. There's no
-account, no tracking and no paid tier: every feature is free, for everyone.
+account, no tracking and no paid tier: every feature is free, for everyone. Desktop builds use a
+native GPUI Kit shell with no embedded browser.
 
 - **Live mode** renders as you type and shows the Markdown only where your cursor is, so you write in a
   finished page without losing control of the source.
@@ -78,8 +79,8 @@ account, no tracking and no paid tier: every feature is free, for everyone.
 
 PDFs are laid out by the local [Takumi](https://takumi.kane.tw) engine: native Rust in the desktop
 app and a local WASM build in the browser demo. No browser print process, TeX installation or network
-service is needed. The older [Paged.js](https://pagedjs.org)/Chromium path remains available by
-setting `localStorage['calmmd.pdf.engine'] = 'browser'` (or `VITE_CALMMD_PDF_ENGINE=browser`). Put
+service is needed. The older [Paged.js](https://pagedjs.org)/Chromium path remains available only in
+the legacy Tauri comparison build. Put
 `---pagebreak---` on its own line for a manual page break. See [`docs/samples`](docs/samples) for
 example output.
 
@@ -131,29 +132,27 @@ The installers aren't signed with a paid certificate yet, so the first launch sh
 
 ## Building from source
 
-You need [Node.js](https://nodejs.org) 20+ and [Rust](https://rustup.rs) 1.91+ (stable), plus the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. The current release still
-uses Tauri; see [`docs/RUST-CORE-PLAN.md`](docs/RUST-CORE-PLAN.md#11-gpui-kit-shell-migration-active-plan)
-for the active GPUI Kit shell migration, which now requires Rust 1.95 with the pinned GPUI Kit dependency.
+You need [Node.js](https://nodejs.org) 20+ and [Rust](https://rustup.rs) 1.95+ (stable). GPUI Kit
+also needs MSVC on Windows and a working Vulkan driver on Linux. See
+[`docs/PACKAGING.md`](docs/PACKAGING.md) for per-platform prerequisites and artifact details.
 
 ```sh
 npm install
-npm run app:dev     # the desktop app with hot reload
-npm run app:build   # installers in src-tauri/target/release/bundle
+npm run app:dev       # the GPUI Kit desktop app
+npm run app:build     # release binary in target/release
+npm run app:package   # ZIP / .app / .deb and tarball in dist/
 ```
 
-`npm run dev` runs the editor in a browser (no Rust needed) against an in-memory file system, which is
-handy for UI work. Add `?demo` to the URL for a showcase document.
+For one compatibility release the old webview shell is still available as
+`npm run app:dev:legacy` and `npm run app:build:legacy`. It is not used by default CI artifacts.
 
-The repository also contains an early GPUI Kit shell preview:
+`npm run dev` runs the legacy Solid/CodeMirror editor in a browser (no Rust needed) against an
+in-memory file system. Add `?demo` to the URL for a showcase document.
 
-```sh
-cargo run -p calmmd-gpui
-```
-
-It shares the Rust core with the Tauri app and includes a native Markdown editor, preview,
-search and light/dark themes. It is not yet the default binary; see
-[`docs/RUST-CORE-PLAN.md`](docs/RUST-CORE-PLAN.md#11-gpui-kit-shell-migration-active-plan).
+The default desktop app is `apps/calmmd-gpui`. It shares `crates/calmmd-core` with the MCP server and
+includes a native Markdown editor, preview, search, light/dark themes and direct Rust export. See
+[`docs/RUST-CORE-PLAN.md`](docs/RUST-CORE-PLAN.md#11-gpui-kit-shell-migration-active-plan) for the
+migration history and remaining manual cutover checks.
 
 ## Privacy
 

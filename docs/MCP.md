@@ -84,17 +84,16 @@ PDF/HTML export:
 
 ### 3.1 Why the server lives in Rust
 
-Tauri already owns the process, the window registry (`SpaceClaims`) and the OS capabilities. An
-MCP server in Rust can therefore:
+The shell owns the process, the window registry (`SpaceClaims`) and the OS capabilities. The MCP
+server is shell-agnostic:
 
-- hold a random loopback port in Tauri-managed state;
-- route calls to the window holding a Space;
-- expose lifecycle commands to the webview without a second runtime;
-- route all tool calls, including export, without waiting on the view layer.
+- it holds a random loopback port in core-managed state;
+- it routes calls to the window holding a Space;
+- it starts in the GPUI shell with `--mcp`, or without any UI through
+  `cargo run -p calmmd-core --bin calmmd-mcp -- --root <folder>`;
+- it runs every tool call, including export, without waiting on a view layer.
 
-The webview deliberately has **no MCP SDK**. It mirrors Rust state changes and no longer answers
-export requests. That
-keeps protocol concerns in Rust and application concerns in TypeScript.
+Neither shell has an MCP SDK in its view code. Protocol, auth and tool logic stay in `calmmd-core`.
 
 ### 3.2 Transport and security
 
@@ -314,8 +313,9 @@ Clients discover them through `resources/list` and `resources/templates/list`.
 - Starting copies `url · token: …` to the clipboard.
 - A small `MCP` marker appears in the status bar while the server is enabled.
 
-When `--mcp` is used, startup begins before the webview has loaded settings; that is safe because
-`mcpStart()` is idempotent and returns the already-running status.
+In the default GPUI shell, `--mcp` (or `CALMMD_MCP=1`) prints `CALMMD_MCP_URL` and
+`CALMMD_MCP_TOKEN` and copies `url · token: …` to the clipboard. The headless core host prints the
+same values. `npm run test:mcp` runs the 49-check smoke against either endpoint.
 
 ---
 

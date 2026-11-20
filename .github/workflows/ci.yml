@@ -10,9 +10,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  frontend:
-    name: Typecheck, unit tests, build (web)
+  legacy-web:
+    name: Legacy TypeScript tests (one-release compatibility window)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +30,7 @@ jobs:
       - run: npm run build
 
   app:
-    name: Rust tests and app build (${{ matrix.name }})
-    needs: frontend
+    name: GPUI Kit app (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
@@ -37,16 +40,16 @@ jobs:
           - name: Windows
             os: windows-latest
           - name: macOS
-            os: macos-latest
+            os: macos-15
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Linux system libraries
+      - name: Linux graphics libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libvulkan1 libvulkan-dev mesa-vulkan-drivers libxkbcommon-dev libwayland-dev
 
       - uses: actions/setup-node@v4
         with:
@@ -60,13 +63,42 @@ jobs:
           workspaces: .
 
       - run: npm ci
-      - run: npm run build
-      - name: Rust unit tests
+      - name: Rust checks
+        run: cargo check --workspace --all-targets
+      - name: Rust tests (core, GPUI and legacy adapters)
         run: cargo test --workspace
       - name: Native Takumi PDF test
         run: cargo test -p calmmd-core renders_a_simple_pdf
-      # Paged.js fallback: real pagination via headless Chromium over CDP. GitHub runners ship Chrome or Edge.
-      - name: PDF pagination fallback test
-        run: cargo test --manifest-path src-tauri/Cargo.toml prints_paginated_pdf -- --include-ignored
-      - name: Build the app (no installers)
-        run: npx tauri build --no-bundle
+
+      - name: Build GPUI shell
+        run: npm run app:build
+      - name: Package GPUI shell
+        run: npm run app:package
+      - name: Upload installable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: calmmd-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Headless MCP smoke
+        run: |
+          set -e
+          cargo build -p calmmd-core --bin calmmd-mcp
+          BIN=target/debug/calmmd-mcp
+          if [ "$RUNNER_OS" = "Windows" ]; then BIN="$BIN.exe"; fi
+          ROOT="$(mktemp -d)/notes"
+          mkdir -p "$ROOT"
+          DATA="$(mktemp -d)"
+          CALMMD_DATA_DIR="$DATA" "$BIN" --root "$ROOT" > "$RUNNER_TEMP/calmmd-mcp.log" 2>&1 &
+          SERVER_PID=$!
+          for _ in $(seq 1 60); do
+            if grep -q '^CALMMD_MCP_URL=' "$RUNNER_TEMP/calmmd-mcp.log"; then break; fi
+            sleep 0.25
+          done
+          export CALMMD_MCP_URL="$(sed -n 's/^CALMMD_MCP_URL=//p' "$RUNNER_TEMP/calmmd-mcp.log" | head -1)"
+          export CALMMD_MCP_TOKEN="$(sed -n 's/^CALMMD_MCP_TOKEN=//p' "$RUNNER_TEMP/calmmd-mcp.log" | head -1)"
+          test -n "$CALMMD_MCP_URL"
+          test -n "$CALMMD_MCP_TOKEN"
+          node scripts/mcp-smoke.mjs
+          kill "$SERVER_PID" || true

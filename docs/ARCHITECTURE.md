@@ -3,9 +3,9 @@
 How CalmMD is put together, and the rules that keep it working. Read [SPEC.md](../SPEC.md) first for the
 product decisions and design principles, and [CONTRIBUTING.md](../CONTRIBUTING.md) for how to work on it.
 The Rust service layer (Mordant, zspell, Takumi and ikat) is described in
-[`RUST-CORE-PLAN.md`](RUST-CORE-PLAN.md). That document also tracks the active GPUI Kit shell
-migration. The Tauri shell is still the shipped desktop app; `apps/calmmd-gpui` is the in-progress
-native shell preview.
+[`RUST-CORE-PLAN.md`](RUST-CORE-PLAN.md). That document also tracks the GPUI Kit shell migration.
+`apps/calmmd-gpui` is now the default desktop binary; `src-tauri` remains a one-release compatibility
+shell. Packaging is described in [`PACKAGING.md`](PACKAGING.md).
 
 ## Commands
 
@@ -13,23 +13,25 @@ native shell preview.
 |---|---|
 | Install | `npm install` (needs Node 20+, and Rust stable + platform deps for the desktop app) |
 | Browser dev (no Rust needed) | `npm run dev` → http://localhost:1420 (localStorage sandbox platform) |
-| Desktop dev | `npm run app:dev` |
+| Desktop dev (GPUI Kit) | `npm run app:dev` |
 | Unit tests (TS) | `npm test` |
 | Unit tests (Rust) | `cargo test --workspace` |
-| GPUI shell preview | `cargo run -p calmmd-gpui` (needs GPUI Kit platform dependencies) |
+| Headless MCP host | `npm run app:mcp:headless -- --root <folder>` |
 | Typecheck | `npm run typecheck` |
-| Production build | `npm run app:build` |
+| Production build | `npm run app:build` (GPUI release binary) |
+| Packages | `npm run app:package` (ZIP, `.app`/DMG, tarball/`.deb`) |
 | Regenerate icons | `npx tauri icon assets/brand/calmmd-mark.svg` (then delete `src-tauri/icons/{android,ios}`) |
 
 On Windows, Rust needs the MSVC build tools (`winget install Microsoft.VisualStudio.2022.BuildTools`
-with the VC tools workload). On Linux, see the Tauri prerequisites (webkit2gtk-4.1, etc.).
+with the VC tools workload). GPUI Kit also needs CMake. On Linux it needs a graphical session and a
+working Vulkan driver; see `docs/PACKAGING.md`.
 
 ## Rust workspace
 
 ```text
 crates/calmmd-core/   UI-independent services, DTOs, MCP server; no Tauri or GPUI imports
-src-tauri/            legacy Tauri shell and command adapters (still the shipped binary)
-apps/calmmd-gpui/     GPUI Kit shell preview: Dock, Actions, Entity adapters, Platform seams
+src-tauri/            one-release legacy Tauri shell and command adapters
+apps/calmmd-gpui/     default GPUI Kit shell: Dock, Actions, Entity adapters, Platform seams
 ```
 
 `AppContext` gives each shell the same data directory, event sink and window registry. Core events

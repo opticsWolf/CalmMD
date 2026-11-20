@@ -14,10 +14,15 @@
     "test:watch": "vitest",
     "test:rust": "cargo test --workspace",
     "tauri": "tauri",
-    "app:dev": "tauri dev",
-    "app:build": "tauri build",
+    "app:dev": "cargo run -p calmmd-gpui",
+    "app:build": "cargo build --release -p calmmd-gpui",
     "site": "node scripts/build-site.mjs",
-    "app:gpui": "cargo run -p calmmd-gpui"
+    "app:gpui": "cargo run -p calmmd-gpui",
+    "app:package": "node scripts/package-gpui.mjs",
+    "app:dev:legacy": "tauri dev",
+    "app:build:legacy": "tauri build",
+    "test:mcp": "node scripts/mcp-smoke.mjs",
+    "app:mcp:headless": "cargo run -p calmmd-core --bin calmmd-mcp --"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.4",

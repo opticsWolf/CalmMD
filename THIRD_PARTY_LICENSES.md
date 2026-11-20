@@ -4,7 +4,7 @@ Runtime dependencies shipped with CalmMD. Only permissive licenses are allowed.
 
 | Package | License | Use |
 |---|---|---|
-| Tauri 2 (`tauri`, `@tauri-apps/api`, `tauri-plugin-dialog`) | MIT / Apache-2.0 | Desktop shell |
+| Tauri 2 (`tauri`, `@tauri-apps/api`, `tauri-plugin-dialog`) | MIT / Apache-2.0 | Legacy compatibility shell only |
 | CodeMirror 6 (`@codemirror/*`, `@lezer/*`) | MIT | Editor |
 | Solid (`solid-js`) | MIT | UI layer |
 | markdown-it, markdown-it-footnote | MIT | Markdown rendering |
@@ -50,14 +50,17 @@ Dev-only tooling (Vite, Vitest, TypeScript, jsdom, tempfile) is not distributed.
 Phase 7 cleanup changed no runtime dependency: it only narrowed Tauri capabilities to the event,
 menu and window APIs actually used by the webview and removed unused internal Rust helpers.
 
-**GPUI Kit shell preview (not the default binary yet):** `gpui-kit` 0.10.0 (Apache-2.0, re-exports a
-pinned GPUI snapshot, with its `syntect` highlighting feature enabled) and `rfd` (MIT / Apache-2.0)
-for native file dialogs and `fs2` (MIT) for the single-instance lock. `syntect` and
-`syntect-assets` are already used by the Rust Markdown path. The Rust core also vendors the existing
-Fontsource (SIL OFL 1.1), KaTeX (MIT/OFL) and Paged.js (MIT) export assets so MCP can build an
-offline standalone document without npm at runtime.
-GPUI Kit's documentation
-prose is CC BY 4.0, so this project summarises it rather than copying it into CalmMD docs. Optional
-`gpui-webview` (MIT / Apache-2.0 through Wry) is still planned for browser-only fallbacks only.
-Each dependency's transitive licences must be reviewed again before the GPUI binary becomes the
-default.
+**Default GPUI Kit shell:** `gpui-kit` 0.10.0 (Apache-2.0, re-exports a pinned GPUI snapshot, with
+its `syntect` highlighting feature enabled), `rfd` (MIT / Apache-2.0) for native file dialogs and
+`fs2` (MIT) for the single-instance lock. `syntect` and `syntect-assets` are already used by the Rust
+Markdown path. The Rust core vendors the existing Fontsource (SIL OFL 1.1), KaTeX (MIT/OFL) and
+Paged.js (MIT) export assets so MCP can build an offline standalone document without npm at runtime.
+GPUI Kit documentation prose is CC BY 4.0, so this project summarises it rather than copying it.
+Optional `gpui-webview` (MIT / Apache-2.0 through Wry) remains planned for browser-only fallbacks.
+
+**Release blocker — transitive licence review:** `cargo metadata` currently resolves MPL-2.0 crates
+(`cssparser`, `cssparser-macros`, `dtoa-short`, `selectors`, `option-ext`) into the default GPUI
+binary through Takumi and zspell. That does not meet the project's permissive-only rule. These must
+be replaced, upgraded to dual-licensed versions, or explicitly cleared before a public GPUI release.
+The GPUI binary is the default in source builds and CI artifacts, but the licence gate is **not**
+passed and Phase 18 cannot be marked complete until this is resolved.

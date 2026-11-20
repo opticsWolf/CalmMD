@@ -107,6 +107,21 @@ impl WorkspaceState {
             dirty: false,
             _event_subscription: None,
         };
+        if let Ok(status) = this.services.workspace.status(
+            &this.window_label,
+            &this.window_label,
+            Value::Array(Vec::new()),
+        ) {
+            this.root = status.get("root").and_then(Value::as_str).map(str::to_owned);
+            this.active = status
+                .get("activeDocument")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            this.refresh_documents();
+            if let Some(active) = this.active.clone() {
+                this.open_document(&active, cx);
+            }
+        }
         this._event_subscription = Some(cx.subscribe(&this.events, |this, _, event: &CoreEvent, cx| {
             if event
                 .target

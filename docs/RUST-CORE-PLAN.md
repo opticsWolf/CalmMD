@@ -112,6 +112,14 @@ next milestone is a full native shell migration; it is a UI rewrite, not a depen
   has File/Edit/View menus, a native/drawn context menu, URL allow-listing, drag-and-drop launch
   paths and single-instance launch queueing. See `docs/visual-reviews/gpui-phases-14-15.md` and
   `docs/PLATFORM-LIMITS.md`.
+- **Phase 16 — implemented:** MCP now starts in the default GPUI shell with `--mcp` and in a new
+  headless `calmmd-mcp` binary built from `calmmd-core`. Both passed the 49-check smoke without the
+  webview export bridge.
+- **Phases 17–18 — cutover/packaging infrastructure implemented, release gate blocked:** the GPUI
+  shell is the default Cargo member and npm build target; ZIP/`.app`/DMG/tarball/`.deb` packaging,
+  app identity, resource inventory and cross-platform CI exist. Public release is blocked because
+  `cargo metadata` still resolves MPL-2.0 transitive crates through Takumi and zspell; see
+  `THIRD_PARTY_LICENSES.md`.
 - **GPUI phases 11–15 validated:** `npm run typecheck`, 413 TypeScript tests, `npm run build`,
   `cargo check --workspace --all-targets`, `cargo test --workspace` (117 passed, 3 ignored) and the
   live Tauri-hosted MCP smoke all passed; the smoke's direct Rust exports produced a 17 KB Takumi
@@ -676,30 +684,44 @@ Cargo feature.
 - **Gate:** platform tests cover menu structure, URL filtering, queueing and launch-path filtering.
   Per-OS manual checks are tracked in `docs/visual-reviews/gpui-phases-14-15.md`.
 
-#### Phase 16 — MCP finalization
+#### Phase 16 — MCP finalization — implemented
 
 - Remove all Tauri dependencies from MCP tools and resources.
 - Confirm the 18 tools, three prompts and four resources still operate on live core state.
 - Keep the loop-only HTTP endpoint, bearer token and localhost origin validation unchanged.
-- **Exit:** full MCP smoke passes against the GPUI binary and the core crate without a webview.
+- **Implementation:** `McpManager` lives in `calmmd-core` and no longer depends on Tauri. The GPUI
+  shell starts it with `--mcp`/`CALMMD_MCP=1`, restores the last session root, and prints/copies the
+  endpoint. `crates/calmmd-core/src/bin/calmmd-mcp.rs` provides a UI-free host that accepts
+  `--root`.
+- **Gate:** `scripts/mcp-smoke.mjs` passed 49/49 against both the GPUI binary and the headless core
+  host, including direct HTML/PDF export.
 
-#### Phase 17 — Cutover
+#### Phase 17 — Cutover — implemented in source builds
 
 - Make `calmmd-gpui` the shipped binary. Keep the Tauri binary behind a `legacy-tauri` feature for
   one release, then delete `apps/calmmd-tauri`, `src/`, Tauri capabilities and `tauri.conf.json`.
 - Remove TypeScript tooling and dependencies only after the release confirms parity.
 - Update README, CONTRIBUTING, SPEC, ARCHITECTURE, MCP docs and THIRD_PARTY_LICENSES.
-- **Exit:** default CI build produces GPUI-only artifacts; no Tauri/webview code remains in the
-  shipping app.
+- **Implementation:** `apps/calmmd-gpui` is the workspace default member and
+  `npm run app:dev`/`app:build` target it. `src-tauri` stays available for one release through
+  `app:dev:legacy`/`app:build:legacy`. README, CONTRIBUTING, SPEC, ARCHITECTURE, MCP docs and licence
+  notes were updated; `docs/PACKAGING.md` records identity, resources and signing.
+- **Gate:** default CI no longer builds Tauri artifacts. The remaining release gate is the transitive
+  MPL-2.0 dependency finding in `THIRD_PARTY_LICENSES.md`; until it is resolved, this is a source
+  cutover rather than a public-release cutover.
 
-#### Phase 18 — Packaging and release
+#### Phase 18 — Packaging and release — infrastructure implemented, release blocked
 
 - Replace Tauri bundling with per-platform packaging: `.app`/`.dmg`, Windows installer/ZIP and
   Linux tarball/`.deb`, per GPUI Kit's packaging guide.
 - Add icons, app identity, resource inventories, signing/notarization notes and release tests.
 - Run CI on Rust 1.95 across Windows, macOS and Linux; keep MCP, Markdown, spell, export and GPUI
   view tests in the matrix.
-- **Exit:** installable GPUI Kit builds are produced and smoke-tested on every target.
+- **Implementation:** `scripts/package-gpui.mjs` produces a Windows ZIP with an install helper, a
+  macOS `.app`/DMG and Linux tarball/`.deb`; CI builds and uploads them on all three platforms and
+  runs the headless MCP smoke.
+- **Gate:** release is blocked on the licence finding above and on manual install/smoke checks on
+  clean machines. `docs/PACKAGING.md` lists the remaining signing and release-test steps.
 
 ### 11.5 Definition of done for the GPUI milestone
 

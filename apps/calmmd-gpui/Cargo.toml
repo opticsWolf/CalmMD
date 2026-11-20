@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "CalmMD GPUI Kit shell (migration preview)"
+description = "CalmMD GPUI Kit desktop shell"
+default-run = "calmmd-gpui"
 
 [dependencies]
 gpui-kit = { version = "=0.10.0", features = ["syntect"] }

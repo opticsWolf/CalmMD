@@ -15,7 +15,7 @@ pub struct TargetArgs {
     pub space_id: Option<String>,
 }
 
-/// Correlates MCP tool calls with responses from the running webview.
+/// Resolves MCP targets against the host window registry. Tool calls no longer wait on a view.
 pub struct McpBridge {
     app: crate::app::AppContext,
 }

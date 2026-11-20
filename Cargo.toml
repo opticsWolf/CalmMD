@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/calmmd-core", "src-tauri", "apps/calmmd-gpui"]
+default-members = ["apps/calmmd-gpui"]
 resolver = "2"
 
 [workspace.package]

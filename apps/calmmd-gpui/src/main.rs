@@ -8,6 +8,8 @@ mod theme;
 mod ui;
 
 use platform::{NativePlatform, Platform};
+use calmmd_core::core::dto::WorkspaceSnapshotDto;
+use gpui_kit::ClipboardItem;
 use services::{CoreEvent, Services};
 use single_instance::{launch_paths, queue_launch_paths, take_launch_paths, InstanceLock};
 use state::CoreEvents;
@@ -53,8 +55,21 @@ fn open_paths_event(paths: Vec<String>) -> CoreEvent {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
     let data_dir = data_dir();
-    let initial_paths = launch_paths(std::env::args());
+    let initial_paths = launch_paths(args.iter().cloned());
+    let mut root_override = None;
+    let mut idx = 1;
+    while idx < args.len() {
+        if args[idx] == "--root" {
+            root_override = args.get(idx + 1).cloned();
+            idx += 2;
+        } else {
+            idx += 1;
+        }
+    }
+    let mcp_enabled = args.iter().any(|arg| arg == "--mcp")
+        || std::env::var_os("CALMMD_MCP").is_some_and(|value| value != "0");
     let Some(_lock) = InstanceLock::acquire(&data_dir) else {
         queue_launch_paths(&data_dir, initial_paths);
         eprintln!("CalmMD is already running; launch paths were queued for it.");
@@ -62,6 +77,36 @@ fn main() {
     };
 
     let mut services = Arc::new(Services::new(data_dir.clone()));
+    if let Some(root) = root_override {
+        let _ = services.workspace.sync(
+            "main",
+            WorkspaceSnapshotDto {
+                root: Some(root),
+                documents: Vec::new(),
+                active_document: None,
+            },
+        );
+    }
+
+    // rmcp and axum need a Tokio reactor. GPUI's executor drives the views; this runtime drives
+    // the loopback MCP listener independently.
+    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime for MCP");
+    let mcp_status = if mcp_enabled {
+        match runtime.block_on(services.start_mcp()) {
+            Ok(status) => {
+                println!("CALMMD_MCP_URL={}", status.url.as_deref().unwrap_or(""));
+                println!("CALMMD_MCP_TOKEN={}", status.token.as_deref().unwrap_or(""));
+                Some(status)
+            }
+            Err(error) => {
+                eprintln!("Could not start MCP: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let launch_tx = services.event_sender.clone();
     let open_urls_tx = launch_tx.clone();
     let app = gpui_kit::application();
@@ -93,6 +138,14 @@ fn main() {
         let platform: Arc<dyn Platform> = Arc::new(NativePlatform);
 
         ui::init(cx, services, events, platform);
+
+        if let Some(status) = mcp_status {
+            if let (Some(url), Some(token)) = (status.url, status.token) {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "{url} · token: {token}"
+                )));
+            }
+        }
 
         let queued = take_launch_paths(&data_dir);
         for path in initial_paths.into_iter().chain(queued) {

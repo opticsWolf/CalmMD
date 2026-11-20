@@ -1,5 +1,5 @@
-//! Local MCP server. It never touches files by itself: every tool call is routed to the
-//! running webview, where the document manager and explorer own the live state.
+//! Local MCP server. Every tool call runs against the UI-independent core services that both
+//! shells share, so no webview or window is required for an export or file operation.
 
 mod bridge;
 mod tools;

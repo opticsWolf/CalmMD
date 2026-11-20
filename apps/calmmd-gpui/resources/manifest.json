@@ -1,0 +1,14 @@
+{
+  "appId": "app.calmmd.editor",
+  "resources": {
+    "icons": [
+      "resources/icons/icon.ico",
+      "resources/icons/icon.icns",
+      "resources/icons/icon.png",
+      "resources/icons/128x128.png",
+      "resources/icons/128x128@2x.png"
+    ],
+    "exportAssets": "compiled into calmmd-core"
+  },
+  "notes": "The GPUI shell uses system fonts and compiles export CSS/fonts into calmmd-core, so no runtime npm or webview asset directory is required."
+}

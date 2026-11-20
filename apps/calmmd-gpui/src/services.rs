@@ -3,10 +3,12 @@
 use calmmd_core::{
     core::{
         autosave::{create_app_autosave, AppAutosave},
+        dto::WorkspaceSnapshotDto,
         history::{app_history, AppHistory, AppHistoryStore},
         session::{app_store, SessionStore},
         workspace::WorkspaceRegistry,
     },
+    mcp::{McpManager, McpStatus},
     windows::SpaceClaims,
     AppContext, EventSink, WindowInfo, WindowRegistry,
 };
@@ -101,9 +103,14 @@ pub struct Services {
     pub autosave: Arc<AppAutosave>,
     pub session: SessionStore<AppHistoryStore>,
     pub history: AppHistory,
+    pub mcp: Arc<McpManager>,
 }
 
 impl Services {
+    pub async fn start_mcp(&self) -> Result<McpStatus, String> {
+        self.mcp.start().await
+    }
+
     pub fn new(data_dir: std::path::PathBuf) -> Self {
         let (tx, events) = mpsc::unbounded_channel();
         let windows = Arc::new(ShellWindows::default());
@@ -115,11 +122,36 @@ impl Services {
             windows.clone() as Arc<dyn WindowRegistry>,
         );
 
+        let workspace = WorkspaceRegistry::new(context.clone());
+        let autosave = Arc::new(create_app_autosave(&context));
+        let session_store = app_store(&context);
+        let history = app_history(&context);
+
+        // Restore the last folder and active note so MCP sees the same live state as the shell.
+        if let Ok(Some(session)) = session_store.session("main") {
+            if let Some(root) = session.root.filter(|root| std::path::Path::new(root).is_dir()) {
+                let active = session
+                    .tabs
+                    .get(session.active)
+                    .and_then(|tab| tab.path.clone());
+                let _ = workspace.sync(
+                    "main",
+                    WorkspaceSnapshotDto {
+                        root: Some(root),
+                        documents: Vec::new(),
+                        active_document: active,
+                    },
+                );
+            }
+        }
+
+        let mcp = McpManager::new(context.clone(), workspace.clone());
         Self {
-            workspace: WorkspaceRegistry::new(context.clone()),
-            autosave: Arc::new(create_app_autosave(&context)),
-            session: app_store(&context),
-            history: app_history(&context),
+            mcp: mcp.clone(),
+            workspace,
+            autosave,
+            session: session_store,
+            history,
             context,
             events: Some(events),
             event_sender: tx,

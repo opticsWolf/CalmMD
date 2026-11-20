@@ -15,7 +15,7 @@ License: **MIT**. Status: pre-1.0, built in milestones (see bottom).
 
 | Item | Decision |
 |---|---|
-| Name | **CalmMD** (pronounced "calm M-D"). Written as `CalmMD` in prose and `calmmd` in ids. Short real-word names (Plume, Margin, Tinta, Inkling, Featherdown, Calmark…) are all taken by existing Markdown editors. Known near-collision: the hobby repo `suheilOS/calmd`. The name lives in one constant (`src/brand.ts`) plus `tauri.conf.json`. |
+| Name | **CalmMD** (pronounced "calm M-D"). Written as `CalmMD` in prose and `calmmd` in ids. Short real-word names (Plume, Margin, Tinta, Inkling, Featherdown, Calmark…) are all taken by existing Markdown editors. Known near-collision: the hobby repo `suheilOS/calmd`. The name lives in `apps/calmmd-gpui/app.json`; the legacy webview shell still has `tauri.conf.json`. |
 | Tagline | "Markdown, calmly." |
 | Mark | A lowercase **m** whose last stroke softens into a downward curve (a nod to Markdown's ↓), in a rounded square. It works as a monochrome glyph at 16 px. |
 | Palette | Ink `#1F2A44` · Paper `#FAF8F4` · Amber accent `#E8A23B` |
@@ -177,8 +177,8 @@ signals that pagination and fonts are done).
 
 **Current choice:** the same self-contained HTML is rendered by **Takumi** (MIT OR Apache-2.0),
 natively in the desktop app and from a local WASM build in the browser demo. A visual review of all
-PDF templates accepted it as the default. Set `calmmd.pdf.engine = 'browser'` to use the original
-Paged.js path; details and comparison images are in `docs/visual-reviews/takumi/`.
+PDF templates accepted it as the default. The original Paged.js path is retained for explicit comparison in the legacy Tauri shell only;
+details and comparison images are in `docs/visual-reviews/takumi/`.
 - **Windows:** Microsoft Edge, which ships with Windows 10/11, so **zero install**.
 - **macOS / Linux:** any installed Chrome, Edge, Chromium or Brave. If none is found, the
   system print dialog opens ("Save as PDF"). Same layout and styles, but no running headers or

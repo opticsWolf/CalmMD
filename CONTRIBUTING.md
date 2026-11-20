@@ -9,7 +9,8 @@ something simpler, faster or more reliable rather than adding UI.
   calm UI, progressive disclosure, subtle branding, and the explicit non-goals (no git integration, AI chat,
   screen capture or plugin marketplace in v1).
 - Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the architecture, the rules that keep things from breaking (scroll sync,
-  live mode, saving, export), and the debugging tips.
+  live mode, saving, export), and the debugging tips. Read [docs/PACKAGING.md](docs/PACKAGING.md)
+  when changing the desktop build or release artifacts.
 - For work on Rust-side rendering, spellchecking, PDF generation or the GPUI Kit shell migration, read
   [docs/RUST-CORE-PLAN.md](docs/RUST-CORE-PLAN.md). Section 11 is the active migration plan; do not
   start a UI rewrite without agreeing a gate there first. For the local MCP server read [docs/MCP.md](docs/MCP.md),
@@ -22,7 +23,7 @@ something simpler, faster or more reliable rather than adding UI.
 ```sh
 npm install
 npm run dev          # browser build at http://localhost:1420 (no Rust needed)
-npm run app:dev      # current desktop app (needs Rust + Tauri prerequisites until the GPUI cutover)
+npm run app:dev      # GPUI Kit desktop app (Rust 1.95+; MSVC on Windows, Vulkan on Linux)
 ```
 
 Add `?demo` to the browser URL for a showcase document. Options: `&mode=split|live|source|preview`,
@@ -37,11 +38,14 @@ npm run test:rust    # cargo test
 npm run build
 ```
 
-The workspace requires Rust 1.95 or newer. The shipped Tauri shell and the GPUI Kit preview share
-`crates/calmmd-core`; see section 11 of `docs/RUST-CORE-PLAN.md` before changing the split.
+The workspace requires Rust 1.95 or newer. `apps/calmmd-gpui` is the default desktop binary;
+`src-tauri` remains a one-release compatibility shell. Both share `crates/calmmd-core`; see section
+11 of `docs/RUST-CORE-PLAN.md` before changing the split.
 
-`cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored` also runs the real PDF test
-(it needs Chrome or Edge). CI runs all of this on Windows, macOS and Linux.
+`cargo test -p calmmd-core renders_a_simple_pdf` runs the real Takumi PDF test. For a headless MCP
+run, start `cargo run -p calmmd-core --bin calmmd-mcp -- --root <folder>` and then run
+`npm run test:mcp` with the printed URL and token. CI runs the Rust tests, GPUI build, packaging and
+MCP smoke on Windows, macOS and Linux.
 
 ## How the code is organised
 
@@ -78,9 +82,10 @@ derived from them will be declined.
 
 ## Releasing (maintainers)
 
-1. Bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`.
+1. Bump the workspace version in `Cargo.toml` and `package.json`.
 2. Commit, then tag: `git tag v0.2.0 && git push --tags`.
-3. The *Release* workflow builds installers for every platform and attaches them to a draft release.
+3. CI builds the GPUI artifacts for every platform; follow `docs/PACKAGING.md` for signing and
+   notarization before attaching them to a draft release.
 4. Check the draft, write release notes, and publish.
 
 ## License

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=CalmMD
+Comment=A calm Markdown editor
+Exec=calmmd-gpui %F
+Icon=calmmd
+Terminal=false
+Categories=Office;TextEditor;
+MimeType=text/markdown;text/plain;
