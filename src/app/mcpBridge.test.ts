@@ -33,16 +33,11 @@ function deps() {
     move: vi.fn(async (_from: string, to: string, name: string) => `${to}/${name}`),
     trash: vi.fn(async () => true),
   };
-  const exporter = {
-    exportPdfData: vi.fn(async (_doc: unknown, out: string) => out),
-    exportHtmlData: vi.fn(async (_doc: unknown, out: string) => out),
-  };
   return {
     platform,
     docs,
     explorer,
-    exporter,
-    asDeps: { platform, docs, explorer, exporter } as unknown as McpBridgeDeps,
+    asDeps: { platform, docs, explorer } as unknown as McpBridgeDeps,
   };
 }
 
@@ -94,39 +89,6 @@ describe('MCP bridge', () => {
       path: string;
     }[];
     expect(result.map((x) => x.path)).toEqual(['/root/notes/b.md']);
-  });
-
-  it('passes cover information to the exporter', async () => {
-    const d = deps();
-    await dispatchMcpRequest(
-      req('calmmd_export_pdf', {
-        path: 'open.md',
-        out: 'export.pdf',
-        prefs: { cover: true, coverAuthor: 'Ada' },
-        cover: { title: 'My title' },
-      }),
-      d.asDeps,
-    );
-    expect(d.exporter.exportPdfData).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '/root/open.md', name: 'open.md' }),
-      '/root/export.pdf',
-      expect.objectContaining({ cover: true, coverAuthor: 'Ada' }),
-      expect.objectContaining({ title: 'My title', author: 'Ada', subtitle: '' }),
-    );
-  });
-
-  it('enables a cover when only a cover object is given', async () => {
-    const d = deps();
-    await dispatchMcpRequest(
-      req('calmmd_export_html', { path: 'open.md', out: 'export.html', cover: { title: 'Cover' } }),
-      d.asDeps,
-    );
-    expect(d.exporter.exportHtmlData).toHaveBeenCalledWith(
-      expect.anything(),
-      '/root/export.html',
-      expect.objectContaining({ cover: true }),
-      expect.objectContaining({ title: 'Cover' }),
-    );
   });
 
   it('triages a folder from live note text', async () => {

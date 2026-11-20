@@ -296,11 +296,6 @@ fn pretty(value: &Value) -> String {
 
 #[tool_router]
 impl CalmMdTools {
-    async fn call_for(&self, target: &TargetArgs, method: &str, params: Value) -> Result<Value, String> {
-        let window = self.bridge.window_for(target)?;
-        self.bridge.call(window.as_deref(), method, params).await
-    }
-
     #[tool(description = "Status of the running CalmMD app: open folder, open tabs, active document.")]
     async fn calmmd_status(&self) -> Result<CallToolResult, McpError> {
         let window = WorkspaceRegistry::window_label(None);
@@ -560,7 +555,14 @@ impl CalmMdTools {
             Ok(params) => params,
             Err(e) => return fail(e),
         };
-        match self.call_for(&args.target, "calmmd_export_pdf", params).await {
+        let result = crate::core::export::body::export_pdf(
+            params.get("path").and_then(Value::as_str).unwrap_or(""),
+            params.get("out").and_then(Value::as_str).unwrap_or(""),
+            params.get("text").and_then(Value::as_str).unwrap_or(""),
+            params.get("prefs").unwrap_or(&Value::Null),
+            params.get("cover").unwrap_or(&Value::Null),
+        );
+        match result {
             Ok(v) => ok(v),
             Err(e) => fail(e),
         }
@@ -572,7 +574,14 @@ impl CalmMdTools {
             Ok(params) => params,
             Err(e) => return fail(e),
         };
-        match self.call_for(&args.target, "calmmd_export_html", params).await {
+        let result = crate::core::export::body::export_html(
+            params.get("path").and_then(Value::as_str).unwrap_or(""),
+            params.get("out").and_then(Value::as_str).unwrap_or(""),
+            params.get("text").and_then(Value::as_str).unwrap_or(""),
+            params.get("prefs").unwrap_or(&Value::Null),
+            params.get("cover").unwrap_or(&Value::Null),
+        );
+        match result {
             Ok(v) => ok(v),
             Err(e) => fail(e),
         }

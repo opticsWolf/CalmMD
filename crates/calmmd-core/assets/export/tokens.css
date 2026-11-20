@@ -1,0 +1,595 @@
+/*
+ * Design tokens and colour themes.
+ *
+ * The app sets two attributes on <html>:
+ *   data-theme        "light" | "dark"   (the scheme in effect, "Match system" resolved)
+ *   data-color-theme  a theme id below    (the user's light or dark theme for that scheme)
+ *
+ * :root holds the default light theme (Snow) and is what exports use. [data-theme='dark'] holds
+ * the default dark theme (Ink). Every other theme overrides the full colour set, so themes never
+ * inherit stray colours from each other.
+ *
+ * Brand palette: ink #1F2A44 · paper #FAF8F4 · amber #E8A23B.
+ */
+:root {
+  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Literata Variable', Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Consolas, monospace;
+  --font-system: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  --font-source: var(--font-mono);
+
+  --font-scale: 1;
+  --editor-font-size: calc(15px * var(--font-scale));
+  --editor-line-height: 1.72;
+  --measure: 46rem;
+
+  --radius: 8px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 150ms;
+
+  /* Snow: clean white (default light) */
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f5f6f8;
+  --surface-raised: #ffffff;
+  --fg: #24272e;
+  --fg-strong: #111318;
+  --fg-muted: #565d6a;
+  --fg-faint: #858b96;
+  --hairline: rgba(17, 24, 39, 0.08);
+  --hairline-strong: rgba(17, 24, 39, 0.15);
+  --accent: #e8a23b;
+  --accent-strong: #b97412;
+  --ink: #1f2a44;
+  --link: #2459b3;
+  --caret: #1f2a44;
+  --selection: rgba(232, 162, 59, 0.26);
+  --search-match: rgba(232, 162, 59, 0.28);
+  --search-match-current: rgba(232, 162, 59, 0.55);
+  --code-fg: #8a4b14;
+  --danger: #b3261e;
+  --warn: #a15c00;
+  --primary: #1f2a44;
+  --on-primary: #ffffff;
+  --shadow: 0 1px 2px rgba(20, 24, 36, 0.06), 0 8px 28px rgba(20, 24, 36, 0.12);
+
+  --syntax-comment: #7d838e;
+  --syntax-keyword: #7a3e9d;
+  --syntax-string: #3f7a3a;
+  --syntax-number: #a3561a;
+  --syntax-function: #2f5e9e;
+  --syntax-type: #8a6d1f;
+  --syntax-property: #355d7a;
+  --syntax-tag: #a33a3a;
+
+  --callout-note: #2f6fd6;
+  --callout-tip: #2f8a4a;
+  --callout-important: #7c4dcc;
+  --callout-warning: #b7791f;
+  --callout-caution: #c2412d;
+}
+
+/* Paper: warm off-white, the original CalmMD look */
+:root[data-color-theme='paper'] {
+  --bg: #faf8f4;
+  --surface: #f2efe8;
+  --surface-raised: #ffffff;
+  --fg: #2a2d34;
+  --fg-strong: #15171c;
+  --fg-muted: #5f6471;
+  --fg-faint: #8c909a;
+  --hairline: rgba(31, 42, 68, 0.08);
+  --hairline-strong: rgba(31, 42, 68, 0.16);
+  --accent: #e8a23b;
+  --accent-strong: #b97412;
+  --link: #2f5e9e;
+  --caret: #1f2a44;
+  --selection: rgba(232, 162, 59, 0.26);
+  --code-fg: #6b4a2b;
+  --primary: #1f2a44;
+  --on-primary: #ffffff;
+}
+
+/* GitHub Light */
+:root[data-color-theme='github-light'] {
+  --bg: #ffffff;
+  --surface: #f6f8fa;
+  --surface-raised: #ffffff;
+  --fg: #1f2328;
+  --fg-strong: #1f2328;
+  --fg-muted: #59636e;
+  --fg-faint: #818b98;
+  --hairline: rgba(31, 35, 40, 0.09);
+  --hairline-strong: #d1d9e0;
+  --accent: #0969da;
+  --accent-strong: #0550ae;
+  --link: #0969da;
+  --caret: #1f2328;
+  --selection: rgba(9, 105, 218, 0.18);
+  --search-match: rgba(212, 167, 44, 0.35);
+  --search-match-current: rgba(212, 167, 44, 0.65);
+  --code-fg: #1f2328;
+  --danger: #d1242f;
+  --warn: #9a6700;
+  --primary: #1f883d;
+  --on-primary: #ffffff;
+  --syntax-comment: #59636e;
+  --syntax-keyword: #cf222e;
+  --syntax-string: #0a3069;
+  --syntax-number: #0550ae;
+  --syntax-function: #8250df;
+  --syntax-type: #953800;
+  --syntax-property: #0550ae;
+  --syntax-tag: #116329;
+  --callout-note: #0969da;
+  --callout-tip: #1a7f37;
+  --callout-important: #8250df;
+  --callout-warning: #9a6700;
+  --callout-caution: #cf222e;
+}
+
+/* Code Light: in the style of VS Code's light theme */
+:root[data-color-theme='code-light'] {
+  --bg: #ffffff;
+  --surface: #f8f8f8;
+  --surface-raised: #ffffff;
+  --fg: #3b3b3b;
+  --fg-strong: #1e1e1e;
+  --fg-muted: #616161;
+  --fg-faint: #8b8b8b;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --hairline-strong: rgba(0, 0, 0, 0.14);
+  --accent: #005fb8;
+  --accent-strong: #004a8f;
+  --link: #005fb8;
+  --caret: #000000;
+  --selection: rgba(173, 214, 255, 0.7);
+  --search-match: rgba(234, 92, 0, 0.25);
+  --search-match-current: rgba(166, 116, 0, 0.45);
+  --code-fg: #a31515;
+  --danger: #c72e0f;
+  --warn: #895503;
+  --primary: #005fb8;
+  --on-primary: #ffffff;
+  --syntax-comment: #008000;
+  --syntax-keyword: #0000ff;
+  --syntax-string: #a31515;
+  --syntax-number: #098658;
+  --syntax-function: #795e26;
+  --syntax-type: #267f99;
+  --syntax-property: #001080;
+  --syntax-tag: #800000;
+  --callout-note: #005fb8;
+  --callout-tip: #388a34;
+  --callout-important: #af00db;
+  --callout-warning: #bf8803;
+  --callout-caution: #e51400;
+}
+
+/* Solarized Light */
+:root[data-color-theme='solarized-light'] {
+  --bg: #fdf6e3;
+  --surface: #eee8d5;
+  --surface-raised: #fffbef;
+  --fg: #586e75;
+  --fg-strong: #073642;
+  --fg-muted: #657b83;
+  --fg-faint: #93a1a1;
+  --hairline: rgba(7, 54, 66, 0.09);
+  --hairline-strong: rgba(7, 54, 66, 0.17);
+  --accent: #b58900;
+  --accent-strong: #8a6800;
+  --link: #268bd2;
+  --caret: #073642;
+  --selection: rgba(181, 137, 0, 0.2);
+  --code-fg: #cb4b16;
+  --danger: #dc322f;
+  --warn: #b58900;
+  --primary: #268bd2;
+  --on-primary: #ffffff;
+  --syntax-comment: #93a1a1;
+  --syntax-keyword: #859900;
+  --syntax-string: #2aa198;
+  --syntax-number: #d33682;
+  --syntax-function: #268bd2;
+  --syntax-type: #b58900;
+  --syntax-property: #6c71c4;
+  --syntax-tag: #dc322f;
+  --callout-note: #268bd2;
+  --callout-tip: #859900;
+  --callout-important: #6c71c4;
+  --callout-warning: #b58900;
+  --callout-caution: #dc322f;
+}
+
+/* ---------- Dark ---------- */
+
+/* Ink: deep blue-grey (default dark) */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #16191f;
+  --surface: #1c2028;
+  --surface-raised: #232833;
+  --fg: #d6dae1;
+  --fg-strong: #f2f4f7;
+  --fg-muted: #9aa1ad;
+  --fg-faint: #6f7684;
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-strong: rgba(255, 255, 255, 0.13);
+  --accent: #e8a23b;
+  --accent-strong: #f0b85f;
+  --ink: #1f2a44;
+  --link: #8db4f0;
+  --caret: #e8a23b;
+  --selection: rgba(232, 162, 59, 0.2);
+  --search-match: rgba(232, 162, 59, 0.22);
+  --search-match-current: rgba(232, 162, 59, 0.45);
+  --code-fg: #e3b98a;
+  --danger: #f2817a;
+  --warn: #e8a23b;
+  --primary: #e8a23b;
+  --on-primary: #1b1405;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 32px rgba(0, 0, 0, 0.45);
+
+  --syntax-comment: #6f7684;
+  --syntax-keyword: #c79bf2;
+  --syntax-string: #a5d38f;
+  --syntax-number: #f0a36b;
+  --syntax-function: #8db4f0;
+  --syntax-type: #e6c87a;
+  --syntax-property: #9cc7e8;
+  --syntax-tag: #f08f8f;
+
+  --callout-note: #6ea8fe;
+  --callout-tip: #63c38a;
+  --callout-important: #b495f2;
+  --callout-warning: #e8a23b;
+  --callout-caution: #f2817a;
+}
+
+/* GitHub Dark */
+:root[data-theme='dark'][data-color-theme='github-dark'] {
+  --bg: #0d1117;
+  --surface: #151b23;
+  --surface-raised: #1c232d;
+  --fg: #d1d7e0;
+  --fg-strong: #f0f6fc;
+  --fg-muted: #9198a1;
+  --fg-faint: #6e7681;
+  --hairline: rgba(240, 246, 252, 0.08);
+  --hairline-strong: #3d444d;
+  --accent: #4493f8;
+  --accent-strong: #79b8ff;
+  --link: #4493f8;
+  --caret: #f0f6fc;
+  --selection: rgba(56, 139, 253, 0.3);
+  --search-match: rgba(187, 128, 9, 0.35);
+  --search-match-current: rgba(187, 128, 9, 0.65);
+  --code-fg: #f0f6fc;
+  --danger: #f85149;
+  --warn: #d29922;
+  --primary: #238636;
+  --on-primary: #ffffff;
+  --syntax-comment: #9198a1;
+  --syntax-keyword: #ff7b72;
+  --syntax-string: #a5d6ff;
+  --syntax-number: #79c0ff;
+  --syntax-function: #d2a8ff;
+  --syntax-type: #ffa657;
+  --syntax-property: #79c0ff;
+  --syntax-tag: #7ee787;
+  --callout-note: #4493f8;
+  --callout-tip: #3fb950;
+  --callout-important: #ab7df8;
+  --callout-warning: #d29922;
+  --callout-caution: #f85149;
+}
+
+/* Code Dark: in the style of VS Code's dark theme */
+:root[data-theme='dark'][data-color-theme='code-dark'] {
+  --bg: #1f1f1f;
+  --surface: #181818;
+  --surface-raised: #252526;
+  --fg: #cccccc;
+  --fg-strong: #e7e7e7;
+  --fg-muted: #9d9d9d;
+  --fg-faint: #6e7681;
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-strong: rgba(255, 255, 255, 0.13);
+  --accent: #0078d4;
+  --accent-strong: #4daafc;
+  --link: #4daafc;
+  --caret: #aeafad;
+  --selection: rgba(38, 79, 120, 0.9);
+  --search-match: rgba(234, 92, 0, 0.33);
+  --search-match-current: rgba(81, 92, 106, 0.9);
+  --code-fg: #ce9178;
+  --danger: #f48771;
+  --warn: #cca700;
+  --primary: #0078d4;
+  --on-primary: #ffffff;
+  --syntax-comment: #6a9955;
+  --syntax-keyword: #569cd6;
+  --syntax-string: #ce9178;
+  --syntax-number: #b5cea8;
+  --syntax-function: #dcdcaa;
+  --syntax-type: #4ec9b0;
+  --syntax-property: #9cdcfe;
+  --syntax-tag: #569cd6;
+  --callout-note: #4daafc;
+  --callout-tip: #89d185;
+  --callout-important: #c586c0;
+  --callout-warning: #cca700;
+  --callout-caution: #f48771;
+}
+
+/* Midnight: deep navy with soft neon accents */
+:root[data-theme='dark'][data-color-theme='midnight'] {
+  --bg: #11151f;
+  --surface: #0c1018;
+  --surface-raised: #1a2030;
+  --fg: #c9d1e0;
+  --fg-strong: #eef2f9;
+  --fg-muted: #8c96ab;
+  --fg-faint: #66708a;
+  --hairline: rgba(200, 215, 255, 0.07);
+  --hairline-strong: rgba(200, 215, 255, 0.14);
+  --accent: #7aa2f7;
+  --accent-strong: #a3bfff;
+  --link: #7aa2f7;
+  --caret: #c0caf5;
+  --selection: rgba(122, 162, 247, 0.25);
+  --search-match: rgba(224, 175, 104, 0.3);
+  --search-match-current: rgba(224, 175, 104, 0.55);
+  --code-fg: #e0af68;
+  --danger: #f7768e;
+  --warn: #e0af68;
+  --primary: #7aa2f7;
+  --on-primary: #0f1420;
+  --syntax-comment: #5f6a8f;
+  --syntax-keyword: #bb9af7;
+  --syntax-string: #9ece6a;
+  --syntax-number: #ff9e64;
+  --syntax-function: #7aa2f7;
+  --syntax-type: #2ac3de;
+  --syntax-property: #73daca;
+  --syntax-tag: #f7768e;
+  --callout-note: #7aa2f7;
+  --callout-tip: #9ece6a;
+  --callout-important: #bb9af7;
+  --callout-warning: #e0af68;
+  --callout-caution: #f7768e;
+}
+
+/* Solarized Dark */
+:root[data-theme='dark'][data-color-theme='solarized-dark'] {
+  --bg: #002b36;
+  --surface: #01232c;
+  --surface-raised: #073642;
+  --fg: #93a1a1;
+  --fg-strong: #eee8d5;
+  --fg-muted: #839496;
+  --fg-faint: #5f7a80;
+  --hairline: rgba(238, 232, 213, 0.07);
+  --hairline-strong: rgba(238, 232, 213, 0.14);
+  --accent: #b58900;
+  --accent-strong: #d9a400;
+  --link: #268bd2;
+  --caret: #eee8d5;
+  --selection: rgba(181, 137, 0, 0.25);
+  --search-match: rgba(181, 137, 0, 0.3);
+  --search-match-current: rgba(181, 137, 0, 0.55);
+  --code-fg: #cb4b16;
+  --danger: #dc322f;
+  --warn: #b58900;
+  --primary: #268bd2;
+  --on-primary: #ffffff;
+  --syntax-comment: #657b83;
+  --syntax-keyword: #859900;
+  --syntax-string: #2aa198;
+  --syntax-number: #d33682;
+  --syntax-function: #268bd2;
+  --syntax-type: #b58900;
+  --syntax-property: #6c71c4;
+  --syntax-tag: #dc322f;
+  --callout-note: #268bd2;
+  --callout-tip: #859900;
+  --callout-important: #6c71c4;
+  --callout-warning: #b58900;
+  --callout-caution: #dc322f;
+}
+
+
+/* ---------- More themes ---------- */
+
+/* Rosé: warm white with a rose accent */
+:root[data-color-theme='rose'] {
+  --bg: #fdf9f8;
+  --surface: #f7eeec;
+  --surface-raised: #ffffff;
+  --fg: #3a2f33;
+  --fg-strong: #24191d;
+  --fg-muted: #75636a;
+  --fg-faint: #a3919a;
+  --hairline: rgba(90, 40, 55, 0.08);
+  --hairline-strong: rgba(90, 40, 55, 0.16);
+  --accent: #d6336c;
+  --accent-strong: #b02457;
+  --link: #b02457;
+  --caret: #b02457;
+  --selection: rgba(214, 51, 108, 0.16);
+  --search-match: rgba(214, 51, 108, 0.2);
+  --search-match-current: rgba(214, 51, 108, 0.4);
+  --code-fg: #9c3d5c;
+  --primary: #b02457;
+  --on-primary: #ffffff;
+  --syntax-comment: #a3919a;
+  --syntax-keyword: #b02457;
+  --syntax-string: #4f7a4a;
+  --syntax-number: #b5651d;
+  --syntax-function: #6a4c9c;
+  --syntax-type: #8a6d1f;
+  --syntax-property: #3d6a8a;
+  --syntax-tag: #b02457;
+  --callout-note: #6a6fd6;
+  --callout-tip: #3f8f5f;
+  --callout-important: #b02457;
+  --callout-warning: #c27a1f;
+  --callout-caution: #c2412d;
+}
+
+/* Parchment: aged paper, sepia ink */
+:root[data-color-theme='parchment'] {
+  --bg: #f3ead7;
+  --surface: #eadfc8;
+  --surface-raised: #f9f3e6;
+  --fg: #3f3224;
+  --fg-strong: #2a2016;
+  --fg-muted: #6f5e48;
+  --fg-faint: #9c8a70;
+  --hairline: rgba(80, 55, 25, 0.1);
+  --hairline-strong: rgba(80, 55, 25, 0.2);
+  --accent: #a0522d;
+  --accent-strong: #7f3f20;
+  --link: #7f3f20;
+  --caret: #3f3224;
+  --selection: rgba(160, 82, 45, 0.18);
+  --search-match: rgba(160, 82, 45, 0.22);
+  --search-match-current: rgba(160, 82, 45, 0.42);
+  --code-fg: #7f3f20;
+  --primary: #7f3f20;
+  --on-primary: #fbf6ea;
+  --syntax-comment: #9c8a70;
+  --syntax-keyword: #8b3a62;
+  --syntax-string: #5a7a2e;
+  --syntax-number: #a0522d;
+  --syntax-function: #3d5a80;
+  --syntax-type: #7a5c1f;
+  --syntax-property: #4a6a6a;
+  --syntax-tag: #8b3a3a;
+  --callout-note: #3d5a80;
+  --callout-tip: #5a7a2e;
+  --callout-important: #8b3a62;
+  --callout-warning: #a0522d;
+  --callout-caution: #a3332b;
+}
+
+/* Fjord: cool arctic blue-grey */
+:root[data-theme='dark'][data-color-theme='fjord'] {
+  --bg: #2e3440;
+  --surface: #292e39;
+  --surface-raised: #3b4252;
+  --fg: #d8dee9;
+  --fg-strong: #eceff4;
+  --fg-muted: #a3acbd;
+  --fg-faint: #7b8497;
+  --hairline: rgba(216, 222, 233, 0.08);
+  --hairline-strong: rgba(216, 222, 233, 0.15);
+  --accent: #88c0d0;
+  --accent-strong: #a3d3e0;
+  --link: #88c0d0;
+  --caret: #d8dee9;
+  --selection: rgba(136, 192, 208, 0.22);
+  --search-match: rgba(235, 203, 139, 0.25);
+  --search-match-current: rgba(235, 203, 139, 0.45);
+  --code-fg: #ebcb8b;
+  --primary: #88c0d0;
+  --on-primary: #2e3440;
+  --syntax-comment: #7b8497;
+  --syntax-keyword: #81a1c1;
+  --syntax-string: #a3be8c;
+  --syntax-number: #b48ead;
+  --syntax-function: #88c0d0;
+  --syntax-type: #8fbcbb;
+  --syntax-property: #d8dee9;
+  --syntax-tag: #bf616a;
+  --callout-note: #81a1c1;
+  --callout-tip: #a3be8c;
+  --callout-important: #b48ead;
+  --callout-warning: #ebcb8b;
+  --callout-caution: #bf616a;
+}
+
+/* Nightshade: deep violet with vivid accents */
+:root[data-theme='dark'][data-color-theme='nightshade'] {
+  --bg: #282a36;
+  --surface: #21222c;
+  --surface-raised: #343746;
+  --fg: #e9e9e4;
+  --fg-strong: #f8f8f2;
+  --fg-muted: #a9abc4;
+  --fg-faint: #7c7f9c;
+  --hairline: rgba(248, 248, 242, 0.07);
+  --hairline-strong: rgba(248, 248, 242, 0.14);
+  --accent: #bd93f9;
+  --accent-strong: #d4b8fb;
+  --link: #8be9fd;
+  --caret: #f8f8f2;
+  --selection: rgba(189, 147, 249, 0.25);
+  --search-match: rgba(241, 250, 140, 0.22);
+  --search-match-current: rgba(241, 250, 140, 0.4);
+  --code-fg: #ff79c6;
+  --primary: #bd93f9;
+  --on-primary: #21222c;
+  --syntax-comment: #7c7f9c;
+  --syntax-keyword: #ff79c6;
+  --syntax-string: #f1fa8c;
+  --syntax-number: #bd93f9;
+  --syntax-function: #50fa7b;
+  --syntax-type: #8be9fd;
+  --syntax-property: #ffb86c;
+  --syntax-tag: #ff79c6;
+  --callout-note: #8be9fd;
+  --callout-tip: #50fa7b;
+  --callout-important: #bd93f9;
+  --callout-warning: #ffb86c;
+  --callout-caution: #ff5555;
+}
+
+/* Forest: dark moss with green accents */
+:root[data-theme='dark'][data-color-theme='forest'] {
+  --bg: #1a1f1b;
+  --surface: #151916;
+  --surface-raised: #232a24;
+  --fg: #d4dcd0;
+  --fg-strong: #eef3ea;
+  --fg-muted: #9aa894;
+  --fg-faint: #6e7c69;
+  --hairline: rgba(212, 230, 205, 0.07);
+  --hairline-strong: rgba(212, 230, 205, 0.14);
+  --accent: #7fb069;
+  --accent-strong: #9cc887;
+  --link: #8fc6a8;
+  --caret: #d4dcd0;
+  --selection: rgba(127, 176, 105, 0.25);
+  --search-match: rgba(222, 184, 104, 0.25);
+  --search-match-current: rgba(222, 184, 104, 0.45);
+  --code-fg: #deb868;
+  --primary: #7fb069;
+  --on-primary: #151916;
+  --syntax-comment: #6e7c69;
+  --syntax-keyword: #c49bd8;
+  --syntax-string: #a8cf8e;
+  --syntax-number: #deb868;
+  --syntax-function: #8fc6a8;
+  --syntax-type: #e0c477;
+  --syntax-property: #9ccfd8;
+  --syntax-tag: #e08a7a;
+  --callout-note: #8fc6a8;
+  --callout-tip: #7fb069;
+  --callout-important: #c49bd8;
+  --callout-warning: #deb868;
+  --callout-caution: #e07a6a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

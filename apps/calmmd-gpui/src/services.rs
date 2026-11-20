@@ -94,6 +94,7 @@ impl WindowRegistry for ShellWindows {
 pub struct Services {
     pub context: AppContext,
     pub events: Option<mpsc::UnboundedReceiver<CoreEvent>>,
+    pub event_sender: mpsc::UnboundedSender<CoreEvent>,
     pub windows: Arc<ShellWindows>,
     pub claims: Arc<SpaceClaims>,
     pub workspace: Arc<WorkspaceRegistry>,
@@ -110,7 +111,7 @@ impl Services {
         let claims = Arc::new(SpaceClaims::default());
         let context = AppContext::new(
             data_dir,
-            Arc::new(ChannelEvents { tx }),
+            Arc::new(ChannelEvents { tx: tx.clone() }),
             windows.clone() as Arc<dyn WindowRegistry>,
         );
 
@@ -121,6 +122,7 @@ impl Services {
             history: app_history(&context),
             context,
             events: Some(events),
+            event_sender: tx,
             windows,
             claims,
         }

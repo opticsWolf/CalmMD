@@ -12,12 +12,16 @@ use gpui_kit::{
     component::{
         button::Button,
         dock::{BasePanel, DockArea, DockLayout, DockPlacement, DockSkin, Panel, PanelEvent},
+        global_state::GlobalState,
         input::{Editor, Input, InputState},
         label::Label,
+        menu::AppMenuBar,
+        native_menu::NativeMenu,
     },
     *,
 };
 use calmmd_core::WindowRegistry;
+use serde_json::Value;
 use gpui_kit::base::StyledExt;
 use std::sync::{Arc, Mutex};
 
@@ -34,10 +38,42 @@ gpui_kit::actions!(
         RedoDocument,
         KeepMine,
         LoadTheirs,
+        CopyMarkdown,
         ToggleTheme,
         Quit
     ]
 );
+
+fn install_app_menus(cx: &mut App) {
+    GlobalState::global_mut(cx).set_app_menus(app_menus().into_iter().map(Menu::owned).collect());
+    cx.set_menus(app_menus());
+}
+
+fn app_menus() -> Vec<Menu> {
+    vec![
+        Menu::new("File").items([
+            MenuItem::action("New Window", NewWindow),
+            MenuItem::action("New Document", NewDocument),
+            MenuItem::action("Open Folder…", OpenFolder),
+            MenuItem::separator(),
+            MenuItem::action("Save", SaveDocument),
+            MenuItem::separator(),
+            MenuItem::action("Quit", Quit),
+        ]),
+        Menu::new("Edit").items([
+            MenuItem::action("Undo", UndoDocument),
+            MenuItem::action("Redo", RedoDocument),
+            MenuItem::separator(),
+            MenuItem::action("Copy Markdown", CopyMarkdown),
+        ]),
+        Menu::new("View").items([
+            MenuItem::action("Toggle Theme", ToggleTheme),
+            MenuItem::separator(),
+            MenuItem::action("Next Window", NextWindow),
+            MenuItem::action("Close Window", CloseWindow),
+        ]),
+    ]
+}
 
 struct WindowEntry {
     handle: AnyWindowHandle,
@@ -55,6 +91,8 @@ pub fn init(
     events: Entity<CoreEvents>,
     platform: Arc<dyn Platform>,
 ) {
+    install_app_menus(cx);
+
     cx.bind_keys([
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-o", OpenFolder, None),
@@ -179,6 +217,14 @@ pub fn init(
             });
         }
     });
+    let copy_windows = windows.clone();
+    let copy_platform = platform.clone();
+    cx.on_action(move |_: &CopyMarkdown, cx| {
+        if let Some(entry) = active_entry(&copy_windows, cx) {
+            let text = entry.view.read(cx).state.read(cx).text().to_owned();
+            copy_platform.copy(&text, cx);
+        }
+    });
     cx.on_action(|_: &ToggleTheme, cx| theme::toggle(cx));
     cx.bind_keys([
         KeyBinding::new("ctrl-alt-z", UndoDocument, None),
@@ -187,6 +233,10 @@ pub fn init(
         KeyBinding::new("cmd-alt-t", ToggleTheme, None),
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-alt-t", ToggleTheme, None),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-shift-c", CopyMarkdown, None),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-shift-c", CopyMarkdown, None),
     ]);
     cx.on_action(|_: &Quit, cx| cx.quit());
 
@@ -226,6 +276,8 @@ fn open_shell_window(
 /// Root view of one GPUI window.
 pub struct AppView {
     state: Entity<WorkspaceState>,
+    #[cfg(not(target_os = "macos"))]
+    menu: Entity<AppMenuBar>,
     dock: Entity<DockArea>,
     platform: Arc<dyn Platform>,
     #[allow(dead_code)]
@@ -246,6 +298,8 @@ impl AppView {
         window_label: String,
     ) -> Self {
         let state = cx.new(|cx| WorkspaceState::new(services.clone(), events.clone(), window_label.clone(), cx));
+        #[cfg(not(target_os = "macos"))]
+        let menu = AppMenuBar::new(cx);
         let sidebar = cx.new(|cx| SidebarPanel::new(state.clone(), platform.clone(), window, cx));
         let editor = cx.new(|cx| EditorPanel::new(state.clone(), window, cx));
         let preview = cx.new(|cx| PreviewPanel::new(state.clone(), platform.clone(), cx));
@@ -283,6 +337,8 @@ impl AppView {
 
         Self {
             state,
+            #[cfg(not(target_os = "macos"))]
+            menu,
             dock,
             platform,
             window_label,
@@ -304,7 +360,33 @@ impl AppView {
 
 impl Render for AppView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(self.dock.clone())
+        let state = self.state.clone();
+        let mut root = div().size_full();
+        #[cfg(not(target_os = "macos"))]
+        {
+            root = root.child(self.menu.clone());
+        }
+        root.can_drop(|value, _, _| value.downcast_ref::<ExternalPaths>().is_some())
+            .on_drop::<ExternalPaths>(move |paths, _, cx| {
+                let values: Vec<Value> = paths
+                    .paths()
+                    .iter()
+                    .map(|path| Value::String(path.to_string_lossy().into_owned()))
+                    .collect();
+                let _ = state.update(cx, |state, cx| state.open_dropped_paths(values, cx));
+            })
+            .on_mouse_down(MouseButton::Right, |event, window, cx| {
+                NativeMenu::new()
+                    .menu("New Document", Box::new(NewDocument))
+                    .menu("Open Folder…", Box::new(OpenFolder))
+                    .separator()
+                    .menu("Undo", Box::new(UndoDocument))
+                    .menu("Redo", Box::new(RedoDocument))
+                    .separator()
+                    .menu("Toggle Theme", Box::new(ToggleTheme))
+                    .show(event.position, window, cx);
+            })
+            .child(self.dock.clone())
     }
 }
 
@@ -646,5 +728,25 @@ impl Render for StatusPanel {
                 }));
         }
         row
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::app_menus;
+
+    #[test]
+    fn app_menus_cover_file_edit_and_view_actions() {
+        let menus = app_menus();
+        assert_eq!(menus.iter().map(|menu| menu.name.to_string()).collect::<Vec<_>>(), ["File", "Edit", "View"]);
+        let edit_labels = menus[1]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                gpui_kit::MenuItem::Action { name, .. } => Some(name.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(edit_labels.contains(&"Copy Markdown".to_owned()));
     }
 }

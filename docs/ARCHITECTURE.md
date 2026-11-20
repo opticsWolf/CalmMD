@@ -39,6 +39,9 @@ that calls `cx.notify()`. MCP calls the same `WorkspaceRegistry` directly in bot
 The GPUI preview's `editor.rs` wraps Kit's `Editor` and paints zspell/search decorations;
 `preview.rs` builds native Markdown extensions for CalmMD syntax; `theme.rs` maps the Snow/Paper
 and Ink palettes from `tokens.css` into Kit themes. No browser DOM is involved in the GPUI path.
+`core/export/assets.rs` and `core/export/body.rs` give MCP a browser-free export path, and
+`single_instance.rs` plus the `Platform` seam cover menus, dialogs, clipboard, launch paths and
+drag-and-drop. Platform limits are recorded in `docs/PLATFORM-LIMITS.md`.
 
 ## Architecture
 

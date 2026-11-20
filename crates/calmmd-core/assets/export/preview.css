@@ -1,0 +1,738 @@
+/*
+ * Preview themes. These same rules are used for HTML/PDF export (M7), so they're scoped to
+ * `.md-body` and depend only on the colour tokens.
+ *
+ *   paper       serif, warm, book-like (default)
+ *   studio      sans, compact, technical
+ *   typewriter  monospaced, for drafts and notes
+ */
+
+/* Theme variables: Paper defaults on :root, overridden by any data-preview-theme ancestor, so the
+   preview, live editor and table widgets all inherit the same values. */
+:root {
+  --md-font: var(--font-serif);
+  --md-heading-font: var(--font-serif);
+  --md-size: calc(17px * var(--font-scale, 1));
+  --md-leading: 1.72;
+  --md-measure: 42rem;
+  --md-gap: 1.05em;
+}
+
+.md-body {
+  max-width: calc(var(--md-measure) * var(--measure-scale, 1));
+  margin: 0 auto;
+  padding: 48px 32px 40vh;
+  font-family: var(--md-font);
+  font-size: var(--md-size);
+  line-height: var(--md-leading);
+  color: var(--fg);
+  overflow-wrap: break-word;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  hanging-punctuation: first;
+  user-select: text;
+}
+
+[data-preview-theme='studio'] {
+  --md-font: var(--font-ui);
+  --md-heading-font: var(--font-ui);
+  --md-size: calc(15.5px * var(--font-scale, 1));
+  --md-leading: 1.65;
+  --md-measure: 46rem;
+  --md-gap: 0.95em;
+}
+
+[data-preview-theme='typewriter'] {
+  --md-font: var(--font-mono);
+  --md-heading-font: var(--font-mono);
+  --md-size: calc(14.5px * var(--font-scale, 1));
+  --md-leading: 1.75;
+  --md-measure: 44rem;
+}
+
+/* A reading font chosen in Appearance overrides the document style's (data-font on <html>). */
+:root[data-font='sans'],
+:root[data-font='sans'] [data-preview-theme] {
+  --md-font: var(--font-ui);
+  --md-heading-font: var(--font-ui);
+}
+:root[data-font='serif'],
+:root[data-font='serif'] [data-preview-theme] {
+  --md-font: var(--font-serif);
+  --md-heading-font: var(--font-serif);
+}
+:root[data-font='mono'],
+:root[data-font='mono'] [data-preview-theme] {
+  --md-font: var(--font-mono);
+  --md-heading-font: var(--font-mono);
+}
+:root[data-font='system'],
+:root[data-font='system'] [data-preview-theme] {
+  --md-font: var(--font-system);
+  --md-heading-font: var(--font-system);
+}
+
+/* GitHub: the README look (system sans, ruled h1/h2, gridded tables). */
+[data-preview-theme='github'] {
+  --md-font: var(--font-system);
+  --md-heading-font: var(--font-system);
+  --md-size: calc(16px * var(--font-scale, 1));
+  --md-leading: 1.5;
+  --md-measure: 50rem;
+  --md-gap: 1em;
+}
+
+/* Clear: airy sans with soft headings and generous spacing. */
+[data-preview-theme='clear'] {
+  --md-font: var(--font-ui);
+  --md-heading-font: var(--font-ui);
+  --md-size: calc(16px * var(--font-scale, 1));
+  --md-leading: 1.75;
+  --md-measure: 48rem;
+  --md-gap: 1.15em;
+}
+
+.md-body > :first-child {
+  margin-top: 0;
+}
+
+/* ---------- Text ---------- */
+.md-body p,
+.md-body ul,
+.md-body ol,
+.md-body blockquote,
+.md-body pre,
+.md-body table,
+.md-body dl,
+.md-body figure,
+.md-body .html-block {
+  margin: 0 0 var(--md-gap);
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  font-family: var(--md-heading-font);
+  color: var(--fg-strong);
+  line-height: 1.25;
+  margin: 1.8em 0 0.6em;
+  font-weight: 650;
+  text-wrap: balance;
+  scroll-margin-top: 24px;
+}
+.md-body h1 {
+  font-size: 2.05em;
+  letter-spacing: -0.015em;
+  font-weight: 700;
+  margin-top: 0.4em;
+}
+.md-body h2 {
+  font-size: 1.5em;
+  letter-spacing: -0.01em;
+}
+.md-body h3 {
+  font-size: 1.22em;
+}
+.md-body h4 {
+  font-size: 1.05em;
+}
+.md-body h5,
+.md-body h6 {
+  font-size: 0.95em;
+  color: var(--fg-muted);
+}
+.md-body[data-preview-theme='studio'] h1 {
+  font-size: 1.9em;
+  letter-spacing: -0.022em;
+}
+.md-body[data-preview-theme='studio'] h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--hairline);
+}
+.md-body[data-preview-theme='github'] h1,
+.md-body[data-preview-theme='github'] h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--hairline-strong);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.md-body[data-preview-theme='github'] h1 {
+  font-size: 2em;
+  margin-top: 0.67em;
+}
+.md-body[data-preview-theme='github'] h3,
+.md-body[data-preview-theme='github'] h4 {
+  font-weight: 600;
+}
+.md-body[data-preview-theme='github'] blockquote:not(.callout) {
+  border-left-width: 0.25em;
+  font-style: normal;
+}
+.md-body[data-preview-theme='github'] table {
+  border-spacing: 0;
+}
+.md-body[data-preview-theme='github'] th,
+.md-body[data-preview-theme='github'] td {
+  padding: 6px 13px;
+  border: 1px solid var(--hairline-strong);
+  font-family: inherit;
+  font-size: 1em;
+}
+.md-body[data-preview-theme='github'] tbody tr:nth-child(2n) {
+  background: var(--surface);
+}
+.md-body[data-preview-theme='github'] hr {
+  width: 100%;
+  height: 0.25em;
+  background: var(--hairline-strong);
+  margin: 1.5em 0;
+}
+.md-body[data-preview-theme='github'] pre {
+  border: 0;
+  border-radius: 6px;
+  font-size: 85%;
+  line-height: 1.45;
+  padding: 16px;
+}
+.md-body[data-preview-theme='github'] :not(pre) > code {
+  border: 0;
+  border-radius: 6px;
+  padding: 0.2em 0.4em;
+  background: color-mix(in srgb, var(--fg-muted) 14%, transparent);
+  color: inherit;
+  font-size: 85%;
+}
+
+.md-body[data-preview-theme='clear'] h1,
+.md-body[data-preview-theme='clear'] h2,
+.md-body[data-preview-theme='clear'] h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.md-body[data-preview-theme='clear'] h1 {
+  font-size: 2.2em;
+  margin-bottom: 0.8em;
+}
+.md-body[data-preview-theme='clear'] h2 {
+  font-size: 1.55em;
+  margin-top: 2em;
+}
+.md-body[data-preview-theme='clear'] blockquote:not(.callout) {
+  border-left: 4px solid color-mix(in srgb, var(--accent) 55%, var(--hairline-strong));
+  padding: 0.2em 0 0.2em 1.1em;
+  color: var(--fg-muted);
+}
+.md-body[data-preview-theme='clear'] pre {
+  border: 0;
+  border-radius: 10px;
+}
+.md-body[data-preview-theme='clear'] :not(pre) > code {
+  border: 0;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+.md-body[data-preview-theme='clear'] hr {
+  width: 100%;
+}
+
+.md-body[data-preview-theme='typewriter'] h1,
+.md-body[data-preview-theme='typewriter'] h2 {
+  font-size: 1.3em;
+  letter-spacing: 0;
+}
+.md-body[data-preview-theme='typewriter'] h1::before {
+  content: '# ';
+  color: var(--fg-faint);
+}
+.md-body[data-preview-theme='typewriter'] h2::before {
+  content: '## ';
+  color: var(--fg-faint);
+}
+
+.md-body strong {
+  font-weight: 650;
+  color: var(--fg-strong);
+}
+.md-body a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+  cursor: pointer;
+}
+.md-body a:hover {
+  text-decoration-color: currentColor;
+}
+.md-body mark {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: inherit;
+  padding: 0 0.15em;
+  border-radius: 2px;
+}
+.md-body hr {
+  border: 0;
+  height: 1px;
+  background: var(--hairline-strong);
+  margin: 2.4em auto;
+  width: 40%;
+}
+
+/* ---------- Lists ---------- */
+.md-body ul,
+.md-body ol {
+  padding-left: 1.5em;
+}
+.md-body li + li,
+.md-body li > ul,
+.md-body li > ol {
+  margin-top: 0.25em;
+}
+.md-body li > ul,
+.md-body li > ol {
+  margin-bottom: 0;
+}
+.md-body li::marker {
+  color: var(--fg-faint);
+}
+.md-body ul.contains-task-list {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.md-body .task-list-item {
+  position: relative;
+  padding-left: 1.7em;
+}
+.md-body .task-checkbox {
+  position: absolute;
+  left: 0;
+  top: 0.42em;
+  width: 1.02em;
+  height: 1.02em;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.md-body .task-list-item:has(> .task-checkbox:checked),
+.md-body .task-list-item:has(> p > .task-checkbox:checked) {
+  color: var(--fg-muted);
+}
+
+/* ---------- Quotes ---------- */
+.md-body blockquote {
+  padding: 0.1em 0 0.1em 1.1em;
+  border-left: 3px solid var(--hairline-strong);
+  color: var(--fg-muted);
+}
+.md-body[data-preview-theme='paper'] blockquote {
+  font-style: italic;
+}
+.md-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* GitHub-style alerts: > [!NOTE], [!TIP], [!IMPORTANT], [!WARNING], [!CAUTION] */
+.md-body blockquote.callout {
+  --callout: var(--callout-note);
+  padding: 0.55em 1em 0.6em;
+  border-left: 3px solid var(--callout);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in srgb, var(--callout) 7%, transparent);
+  color: var(--fg);
+  font-style: normal;
+}
+.md-body blockquote.callout-tip {
+  --callout: var(--callout-tip);
+}
+.md-body blockquote.callout-important {
+  --callout: var(--callout-important);
+}
+.md-body blockquote.callout-warning {
+  --callout: var(--callout-warning);
+}
+.md-body blockquote.callout-caution {
+  --callout: var(--callout-caution);
+}
+.md-body .callout-title {
+  margin: 0 0 0.3em;
+  font-family: var(--font-ui);
+  font-size: 0.86em;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--callout);
+}
+
+/* ---------- Front matter (hidden in exports) ---------- */
+.md-body pre.front-matter {
+  padding: 8px 14px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+}
+.md-body pre.front-matter code {
+  color: inherit;
+}
+
+/* ---------- Code ---------- */
+.md-body code,
+.md-body kbd,
+.md-body samp {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+.md-body :not(pre) > code {
+  padding: 0.12em 0.36em;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--code-fg);
+  border: 1px solid var(--hairline);
+}
+.md-body kbd {
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--hairline-strong);
+  border-bottom-width: 2px;
+  background: var(--surface-raised);
+}
+.md-body pre {
+  position: relative;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  overflow-x: auto;
+  line-height: 1.6;
+  font-size: 13.5px;
+  tab-size: 4;
+}
+.md-body pre code {
+  font-size: inherit;
+  color: var(--fg);
+  white-space: pre;
+}
+.md-body pre[data-lang]::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--fg-faint);
+}
+
+/* Lezer classHighlighter tokens: the same palette as the editor. */
+.md-body .tok-comment {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+.md-body .tok-keyword,
+.md-body .tok-operatorKeyword {
+  color: var(--syntax-keyword);
+}
+.md-body .tok-string,
+.md-body .tok-string2 {
+  color: var(--syntax-string);
+}
+.md-body .tok-number,
+.md-body .tok-bool,
+.md-body .tok-atom,
+.md-body .tok-literal {
+  color: var(--syntax-number);
+}
+.md-body .tok-typeName,
+.md-body .tok-className,
+.md-body .tok-namespace {
+  color: var(--syntax-type);
+}
+.md-body .tok-propertyName,
+.md-body .tok-attributeName {
+  color: var(--syntax-property);
+}
+.md-body .tok-variableName.tok-definition,
+.md-body .tok-macroName {
+  color: var(--syntax-function);
+}
+.md-body .tok-tagName {
+  color: var(--syntax-tag);
+}
+.md-body .tok-meta,
+.md-body .tok-punctuation {
+  color: var(--fg-muted);
+}
+.md-body .tok-inserted {
+  color: var(--syntax-string);
+}
+.md-body .tok-deleted {
+  color: var(--danger);
+}
+.md-body .tok-invalid {
+  color: var(--danger);
+}
+.md-body .tok-heading,
+.md-body .tok-strong {
+  font-weight: 700;
+}
+.md-body .tok-emphasis {
+  font-style: italic;
+}
+.md-body .tok-link,
+.md-body .tok-url {
+  color: var(--link);
+}
+
+/* ---------- Tables ---------- */
+.md-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+}
+.md-body th,
+.md-body td {
+  padding: 0.45em 0.9em;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+.md-body th {
+  font-weight: 650;
+  color: var(--fg-strong);
+  border-bottom: 1.5px solid var(--hairline-strong);
+  font-family: var(--font-ui);
+  font-size: 0.92em;
+}
+.md-body tbody tr:hover {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+/* ---------- Media ---------- */
+.md-body img,
+.md-body video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+.md-body p > img:only-child {
+  display: block;
+  margin: 1.4em 0;
+}
+/* Alignment from the alt text (`![Photo|center](…)`); left is the default, as on GitHub. */
+.md-body img.img-center,
+.md-body img.img-right {
+  display: block;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+.md-body img.img-center {
+  margin-left: auto;
+  margin-right: auto;
+}
+.md-body img.img-right {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* ---------- Footnotes ---------- */
+.md-body .footnotes-sep {
+  width: 30%;
+  margin: 3em 0 1.2em;
+}
+.md-body .footnotes {
+  font-size: 0.86em;
+  color: var(--fg-muted);
+}
+.md-body .footnote-ref a,
+.md-body .footnote-backref {
+  text-decoration: none;
+}
+
+/* ---------- Details ---------- */
+.md-body details {
+  margin: 0 0 var(--md-gap);
+  padding: 0.5em 0.9em;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+}
+.md-body summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* ---------- Math ---------- */
+.md-body .math-block {
+  margin: 0 0 var(--md-gap);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.md-body .katex {
+  font-size: 1.08em;
+}
+.md-body .katex-display {
+  margin: 0.4em 0;
+}
+.md-body .katex-error {
+  color: var(--danger) !important;
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+/* ---------- Diagrams ---------- */
+.md-body .mermaid-block {
+  margin: 0 0 var(--md-gap);
+  text-align: center;
+}
+.md-body .mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+.md-body .mermaid-pending pre {
+  opacity: 0.55;
+}
+.md-body .diagram-error {
+  margin-bottom: 0.4em;
+  color: var(--danger);
+  font: 12px var(--font-ui);
+  text-align: left;
+}
+
+/* ---------- Video embeds ---------- */
+.md-body .embed {
+  display: block;
+  margin: 0.4em 0 var(--md-gap);
+}
+.md-body .embed video,
+.md-body .embed .embed-frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: var(--radius);
+  background: #000;
+}
+.embed-play {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.embed-play:hover {
+  border-color: var(--accent);
+}
+.embed-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+}
+.embed-icon::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  border-style: solid;
+  border-width: 8px 0 8px 13px;
+  border-color: transparent transparent transparent #1b1405;
+}
+.embed-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.embed-title {
+  font-weight: 600;
+  color: var(--fg-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.embed-provider {
+  font: 12px var(--font-ui);
+  color: var(--fg-faint);
+}
+
+/* ---------- Page breaks (PDF) ---------- */
+.md-body .page-break {
+  position: relative;
+  height: 0;
+  margin: 2.2em 0;
+  border-top: 1px dashed var(--hairline-strong);
+}
+.md-body .page-break::after {
+  content: 'Page break';
+  position: absolute;
+  left: 50%;
+  top: -0.7em;
+  transform: translateX(-50%);
+  padding: 0 0.6em;
+  background: var(--preview-bg, var(--bg));
+  color: var(--fg-faint);
+  font: 11px var(--font-ui);
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Table of contents (exports) ---------- */
+.md-body nav.toc {
+  margin: 0 0 2.4em;
+}
+.md-body nav.toc h2 {
+  margin-top: 0;
+}
+.md-body nav.toc ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.md-body nav.toc li {
+  margin: 0.25em 0;
+}
+.md-body nav.toc li.toc-2 {
+  padding-left: 1.2em;
+}
+.md-body nav.toc li.toc-3 {
+  padding-left: 2.4em;
+  font-size: 0.94em;
+}
+.md-body nav.toc a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ---------- Cursor sync marker (split view only) ---------- */
+.md-body [data-cursor] {
+  box-shadow: -16px 0 0 -14px var(--accent);
+  transition: box-shadow var(--dur) var(--ease);
+}
+.md-body tr[data-cursor] {
+  box-shadow: none;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+/* Bold, italic and links inside coloured text keep the colour (bold has its own darker colour otherwise). */
+.md-body [style*="color"] strong,
+.md-body [style*="color"] b,
+.md-body [style*="color"] em,
+.md-body [style*="color"] i,
+.md-body [style*="color"] s,
+.md-body [style*="color"] del,
+.md-body [style*="color"] mark {
+  color: inherit;
+}

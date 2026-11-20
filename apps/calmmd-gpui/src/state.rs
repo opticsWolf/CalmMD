@@ -117,6 +117,10 @@ impl WorkspaceState {
                 match event.name.as_str() {
                     "calmmd://workspace" => this.apply_workspace_event(event),
                     "calmmd://autosave" => this.apply_autosave_event(event),
+                    "calmmd://open-paths" => this.open_dropped_paths(
+                        event.payload.as_array().cloned().unwrap_or_default(),
+                        cx,
+                    ),
                     _ => return,
                 }
                 cx.notify();
@@ -226,6 +230,34 @@ impl WorkspaceState {
             Err(error) => self.message = error,
         }
         cx.notify();
+    }
+
+    /// Opens paths dropped onto the window or forwarded by another launch.
+    pub fn open_dropped_paths(&mut self, paths: Vec<Value>, cx: &mut Context<Self>) {
+        let mut folders = Vec::new();
+        let mut documents = Vec::new();
+        for value in paths {
+            let Some(raw) = value.as_str() else { continue };
+            let path = StdPath::new(raw);
+            if path.is_dir() {
+                folders.push(path.to_owned());
+            } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("md")) {
+                documents.push(raw.to_owned());
+            }
+        }
+        if let Some(folder) = folders.into_iter().next() {
+            self.open_folder(folder, cx);
+        }
+        if self.root.is_none() {
+            if let Some(document) = documents.first() {
+                if let Some(parent) = StdPath::new(document).parent() {
+                    self.open_folder(parent.to_owned(), cx);
+                }
+            }
+        }
+        for document in documents {
+            self.open_document(&document, cx);
+        }
     }
 
     /// Opens a link from the preview using the same resolver as the Rust core.

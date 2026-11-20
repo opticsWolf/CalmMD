@@ -57,12 +57,21 @@ impl Platform for NativePlatform {
     }
 
     fn open_url(&self, url: &str, cx: &mut App) {
-        cx.open_url(url);
+        if safe_external_url(url) {
+            cx.open_url(url);
+        }
     }
 
     fn copy(&self, text: &str, cx: &mut App) {
         cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
     }
+}
+
+/// Only hand browser-safe schemes to the OS. Markdown links are resolved in the core first, so
+/// `file:` and `javascript:` URLs here are unexpected and are ignored.
+pub fn safe_external_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
 }
 
 /// In-memory platform for tests and headless service checks.
@@ -86,4 +95,17 @@ impl Platform for MemoryPlatform {
     fn open_url(&self, _url: &str, _cx: &mut App) {}
 
     fn copy(&self, _text: &str, _cx: &mut App) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_external_url;
+
+    #[test]
+    fn only_safe_external_schemes_are_opened() {
+        assert!(safe_external_url("https://example.test/note"));
+        assert!(safe_external_url("mailto:ada@example.test"));
+        assert!(!safe_external_url("javascript:alert(1)"));
+        assert!(!safe_external_url("file:///C:/secret.txt"));
+    }
 }

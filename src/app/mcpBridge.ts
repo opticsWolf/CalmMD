@@ -1,17 +1,15 @@
-import { coverFromDoc, frontMatterFields, type CoverInfo } from '../core/cover';
+import { frontMatterFields } from '../core/cover';
 import { basename, isMarkdownPath, isWithin, joinPath, samePath } from '../core/paths';
 import { extractHeadings } from '../core/outline';
 import type { McpRequest } from '../mcp/types';
 import type { Platform } from '../platform/types';
 import type { Documents } from './documents';
 import type { Explorer } from './explorer';
-import { parseExportPrefs, type ExportPrefs, type Exporter } from './exporter';
 
 export interface McpBridgeDeps {
   platform: Platform;
   docs: Documents;
   explorer: Explorer;
-  exporter: Exporter;
 }
 
 type Params = Record<string, unknown>;
@@ -45,11 +43,6 @@ async function readLiveText(deps: McpBridgeDeps, path: string): Promise<string> 
   return (await deps.platform.readTextFile(path)).text;
 }
 
-function exportPrefs(p: unknown): ExportPrefs {
-  return parseExportPrefs(p ? JSON.stringify(p) : null);
-}
-
-/** Builds CoverInfo the same way the export dialog does; an explicit cover object wins. */
 function intInRange(value: unknown, fallback: number, min: number, max: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, Math.floor(value))) : fallback;
 }
@@ -106,18 +99,6 @@ async function organizationMoves(deps: McpBridgeDeps, plan: unknown, folder: str
     targets.add(key(move.to));
   }
   return moves;
-}
-
-function coverInfo(p: unknown, text: string, path: string, prefs: ExportPrefs): CoverInfo | null {
-  if (!prefs.cover && (p == null || typeof p !== 'object')) return null;
-  const cover = coverFromDoc(text, basename(path).replace(/\.md$/i, ''), new Date(), prefs.coverAuthor);
-  if (p && typeof p === 'object') {
-    const fields = p as Partial<CoverInfo>;
-    for (const key of ['title', 'subtitle', 'author', 'date'] as const) {
-      if (typeof fields[key] === 'string') cover[key] = fields[key] as string;
-    }
-  }
-  return cover;
 }
 
 /** One MCP method, executed against the live app state. Exported for tests. */
@@ -281,23 +262,6 @@ export async function dispatchMcpRequest(req: McpRequest, deps: McpBridgeDeps): 
         }
       }
       return { folder, applied: true, plan: applied, failed, warning };
-    }
-
-    case 'calmmd_export_pdf':
-    case 'calmmd_export_html': {
-      const path = resolvePath(deps, p);
-      const out = resolvePath(deps, { path: str(p.out, 'out') }, 'path');
-      // Rust resolves the path, reads the live buffer and normalizes prefs/cover. The text is
-      // included in the request so the view does not read files or choose a buffer again.
-      const text = typeof p.text === 'string' ? p.text : await readLiveText(deps, path);
-      const doc = { text, path, name: basename(path) };
-      const prefs = exportPrefs(p.prefs);
-      const cover = coverInfo(p.cover, text, path, prefs);
-      if (cover) prefs.cover = true;
-      const result = req.method === 'calmmd_export_pdf'
-        ? await deps.exporter.exportPdfData(doc, out, prefs, cover)
-        : await deps.exporter.exportHtmlData(doc, out, prefs, cover);
-      return { path: result };
     }
 
     default:

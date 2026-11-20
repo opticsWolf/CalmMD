@@ -12,12 +12,10 @@ user-facing summary see [`README.md`](../README.md), for client setup see
 ## 1. Goal and scope
 
 CalmMD can host a **local MCP server** so an external AI client can work on the documents that are
-currently open in the app. The server works on the *live app state*, not a second filesystem implementation. Most tools now
-call Rust workspace services directly; the webview mirrors its buffers into those services and
-applies their state-change events. PDF/HTML export still uses a narrow webview bridge for body
-preparation because the Mermaid patch, image readback and CSS/font assets live there; Rust
-resolves inputs, normalises preferences and assembles the standalone document shell.
-headless exporter lives there.
+currently open in the app. The server works on the *live app state*, not a second filesystem implementation. All tools
+call Rust services directly; the webview mirrors its buffers into those services and applies their
+state-change events. Rust also owns the export assets, body preparation and standalone document
+assembly, so MCP HTML/PDF tools do not need a running UI process.
 
 - reads prefer the mirrored open buffer, so unsaved edits are visible;
 - writes update Rust state, write atomically, snapshot history, and emit an event the editor applies
@@ -43,7 +41,7 @@ Implemented and building as of this document:
 | Streamable HTTP over loopback with bearer token + `Origin` check | ✅ |
 | Start/stop/status commands and menu/palette entries | ✅ |
 | Persisted auto-start setting and status-bar indicator | ✅ |
-| Tauri event bridge for headless exports | ✅ |
+| Browser-free headless exports in Rust | ✅ |
 | Rust-owned workspace state for read/write/list/search/outline/status | ✅ |
 | Rust file history and link-safe rename/move | ✅ |
 | 18 live-state tools | ✅ |
@@ -65,7 +63,7 @@ MCP client (Claude Desktop, Cursor, VS Code, …)
         ▼
 Rust MCP server                         crates/calmmd-core/src/mcp/
   mod.rs      server lifecycle, auth, commands
-  bridge.rs   window routing + export request/response correlation
+  bridge.rs   window routing (the old webview request bridge is retired)
   tools.rs    tools, prompts and read-only resources
         │  direct Rust calls
         ▼
@@ -80,8 +78,8 @@ Webview controllers
         ▼
 Rust workspace mirror (user edits)
 
-PDF/HTML export only:
-  tools.rs → calmmd://mcp/request → src/app/mcpBridge.ts → exporter → disk
+PDF/HTML export:
+  tools.rs → core/export/body.rs → core/export/assemble.rs → Takumi/WASM-independent file write
 ```
 
 ### 3.1 Why the server lives in Rust
@@ -92,9 +90,10 @@ MCP server in Rust can therefore:
 - hold a random loopback port in Tauri-managed state;
 - route calls to the window holding a Space;
 - expose lifecycle commands to the webview without a second runtime;
-- emit a Tauri event and await a correlated response.
+- route all tool calls, including export, without waiting on the view layer.
 
-The webview deliberately has **no MCP SDK**. It only listens for requests and answers them. That
+The webview deliberately has **no MCP SDK**. It mirrors Rust state changes and no longer answers
+export requests. That
 keeps protocol concerns in Rust and application concerns in TypeScript.
 
 ### 3.2 Transport and security
@@ -123,12 +122,12 @@ token is sufficient and matches CalmMD's no-account privacy model.
 4. Mutations emit `calmmd://workspace` events; the webview applies them to its controllers. User
    edits flow back with `core_workspace_upsert_document`.
 5. PDF/HTML tools resolve paths, read the live buffer, normalize preferences and build the cover in
-   Rust (`core/export/prefs.rs`), then use a narrow `McpBridge::call()` for DOM/Mermaid rendering
-   and final document assembly. The event carries the resolved source text so the webview does not
-   read files or choose a buffer again.
+   Rust (`core/export/prefs.rs`). `core/export/body.rs` renders Markdown, embeds local images and
+   offline assets, then `assemble.rs` builds the standalone document. Takumi writes the PDF without
+   a browser.
 
 Tools return errors as `CallToolResult::error` with a text message. Prompts map failures to
-`ErrorData::internal_error`. The export bridge keeps its 120-second timeout.
+`ErrorData::internal_error`.
 
 ---
 
@@ -186,10 +185,10 @@ snapshots on both sides.
 
 ### 4.5 Export
 
-`src/app/exporter.ts` gained `exportPdfData()` and `exportHtmlData()`. They take an explicit
-source document and output path, so MCP does not need the native save dialog. The existing
-`buildBody()` / `buildDocument()` pipeline is unchanged; headless PDF exports now use the local Takumi
-engine by default. Setting `calmmd.pdf.engine` to `browser` selects the older Paged.js/Chromium path.
+MCP exports no longer call `src/app/exporter.ts`. `core/export/body.rs` takes the live text and
+output path resolved by `tools.rs`, renders it with the same Mordant pipeline used by the app, and
+embeds the vendored CSS/font assets. Takumi is the PDF backend; the browser/Paged.js path remains an
+explicit comparison option in the Tauri UI only.
 
 ---
 
@@ -386,8 +385,8 @@ because no `en-US` OS dictionary is installed; they are unrelated to MCP.
 
 ### 9.2 Security and permissions
 
-- **Path scoping lives in the Rust workspace.** PDF/HTML export resolves paths in Rust before the
-  narrow webview body-preparation bridge.
+- **Path scoping lives in the Rust workspace.** PDF/HTML export resolves paths and builds the whole
+  document in Rust, with no webview round trip.
 - **Explicit Tauri capabilities.** `core:default` was replaced with only the event, menu and
   window permissions the webview uses. `opener:allow-open-path` remains broad for user-initiated
   local links and export reveals.

@@ -876,7 +876,7 @@ export default function App(props: { platform: Platform }) {
   }
   const [pandoc, setPandoc] = createSignal(false);
   // The MCP bridge needs all four controllers, so it is installed after the exporter exists.
-  createMcpBridge({ platform, docs, explorer, exporter });
+  createMcpBridge({ platform, docs, explorer });
 
   registry.register([
     { id: 'export.pdf', title: 'Export as PDF…', category: 'File', run: () => openExport('pdf') },

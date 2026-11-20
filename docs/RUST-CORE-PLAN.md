@@ -107,6 +107,15 @@ next milestone is a full native shell migration; it is a UI rewrite, not a depen
   for front matter, callouts, wiki links, math, embeds, Mermaid source and page breaks. CalmMD
   palettes drive light/dark GPUI Kit themes. See `docs/visual-reviews/gpui-phases-11-13.md` for
   the gate checklist; graphical Mermaid parity remains a cutover decision.
+- **Phases 14–15 — implemented:** the core now owns export assets, body construction and the
+  standalone HTML/Takumi PDF path; MCP exports no longer require a webview response. The GPUI shell
+  has File/Edit/View menus, a native/drawn context menu, URL allow-listing, drag-and-drop launch
+  paths and single-instance launch queueing. See `docs/visual-reviews/gpui-phases-14-15.md` and
+  `docs/PLATFORM-LIMITS.md`.
+- **GPUI phases 11–15 validated:** `npm run typecheck`, 413 TypeScript tests, `npm run build`,
+  `cargo check --workspace --all-targets`, `cargo test --workspace` (117 passed, 3 ignored) and the
+  live Tauri-hosted MCP smoke all passed; the smoke's direct Rust exports produced a 17 KB Takumi
+  PDF and a standalone 225 KB HTML file.
 - **GPUI phases 8–10 validated:** `npm run typecheck`, 415 TypeScript tests, `npm run build`,
   `cargo check --workspace --all-targets`, `cargo test --workspace`, the Rust 1.95 MSRV check and
   the live Tauri-hosted MCP smoke all passed (`49/49 checks passed`).
@@ -642,23 +651,30 @@ Cargo feature.
   parity is not claimed yet; a local SVG renderer or explicit `gpui-webview` fallback is a cutover
   decision. No browser runtime is added by this phase.
 
-#### Phase 14 — Export without the bridge
+#### Phase 14 — Export without the bridge — implemented
 
 - Move image readback and CSS/font asset acquisition into `calmmd-core`.
 - Delete the webview `calmmd://mcp/request` export bridge; MCP tools call core export directly.
 - Keep Takumi as default. Keep Paged.js/Chromium only as an explicit comparison fallback, using
   `gpui-webview` where supported.
-- **Exit:** HTML/PDF exports match the current baseline snapshots and the Takumi visual review;
-  MCP smoke passes with no UI process requirement.
+- **Implementation:** `core/export/assets.rs` vendors the CSS, fonts, KaTeX assets and Paged.js
+  polyfill; `core/export/body.rs` renders and embeds them into a standalone HTML document. Both MCP
+  export tools call the core directly and the old webview export branch was deleted.
+- **Gate:** core export/html/PDF tests pass, including a real PDF signature check. The existing
+  Takumi visual review remains the print CSS reference for cutover.
 
-#### Phase 15 — Platform capabilities
+#### Phase 15 — Platform capabilities — implemented
 
 - Replace Tauri plugins with GPUI/AccessKit/platform adapters: native or in-app menus, file
   dialogs, clipboard, `cx.open_url`, reveal-in-folder, drag-and-drop, single instance and launch
   paths.
 - Document platform limits. Linux `NativeMenu` falls back to a GPUI popup; `gpui-webview` does not
   support Wayland.
-- **Exit:** platform gate passes on Windows, macOS and Linux.
+- **Implementation:** `single_instance.rs` owns the lock and launch queue; `ui.rs` installs app
+  menus and a right-click `NativeMenu`; `platform.rs` owns dialogs, clipboard, reveal and an external
+  URL allow-list; dropped folders and files flow through `WorkspaceState::open_dropped_paths`.
+- **Gate:** platform tests cover menu structure, URL filtering, queueing and launch-path filtering.
+  Per-OS manual checks are tracked in `docs/visual-reviews/gpui-phases-14-15.md`.
 
 #### Phase 16 — MCP finalization
 
