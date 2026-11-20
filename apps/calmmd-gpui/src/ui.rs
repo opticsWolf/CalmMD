@@ -1,16 +1,19 @@
 //! GPUI Kit shell: root view, dock panels and command actions.
 
 use crate::{
+    editor::MarkdownEditor,
     platform::Platform,
+    preview,
     services::Services,
     state::{CoreEvents, WorkspaceState},
+    theme,
 };
 use gpui_kit::{
     component::{
         button::Button,
         dock::{BasePanel, DockArea, DockLayout, DockPlacement, DockSkin, Panel, PanelEvent},
+        input::{Editor, Input, InputState},
         label::Label,
-        text::TextView,
     },
     *,
 };
@@ -27,6 +30,11 @@ gpui_kit::actions!(
         NewWindow,
         CloseWindow,
         NextWindow,
+        UndoDocument,
+        RedoDocument,
+        KeepMine,
+        LoadTheirs,
+        ToggleTheme,
         Quit
     ]
 );
@@ -139,6 +147,47 @@ pub fn init(
             let _ = window.update(cx, |_, window, _| window.remove_window());
         }
     });
+    let undo_windows = windows.clone();
+    cx.on_action(move |_: &UndoDocument, cx| {
+        if let Some(entry) = active_entry(&undo_windows, cx) {
+            let _ = entry.view.update(cx, |view, cx| {
+                view.state.update(cx, |state, cx| state.undo_active(cx));
+            });
+        }
+    });
+    let redo_windows = windows.clone();
+    cx.on_action(move |_: &RedoDocument, cx| {
+        if let Some(entry) = active_entry(&redo_windows, cx) {
+            let _ = entry.view.update(cx, |view, cx| {
+                view.state.update(cx, |state, cx| state.redo_active(cx));
+            });
+        }
+    });
+    let keep_windows = windows.clone();
+    cx.on_action(move |_: &KeepMine, cx| {
+        if let Some(entry) = active_entry(&keep_windows, cx) {
+            let _ = entry.view.update(cx, |view, cx| {
+                view.state.update(cx, |state, cx| state.resolve_conflict(true, cx));
+            });
+        }
+    });
+    let theirs_windows = windows.clone();
+    cx.on_action(move |_: &LoadTheirs, cx| {
+        if let Some(entry) = active_entry(&theirs_windows, cx) {
+            let _ = entry.view.update(cx, |view, cx| {
+                view.state.update(cx, |state, cx| state.resolve_conflict(false, cx));
+            });
+        }
+    });
+    cx.on_action(|_: &ToggleTheme, cx| theme::toggle(cx));
+    cx.bind_keys([
+        KeyBinding::new("ctrl-alt-z", UndoDocument, None),
+        KeyBinding::new("ctrl-alt-shift-z", RedoDocument, None),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-alt-t", ToggleTheme, None),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-alt-t", ToggleTheme, None),
+    ]);
     cx.on_action(|_: &Quit, cx| cx.quit());
 
     open_shell_window(cx, open_services, open_events, open_platform, open_windows);
@@ -197,9 +246,9 @@ impl AppView {
         window_label: String,
     ) -> Self {
         let state = cx.new(|cx| WorkspaceState::new(services.clone(), events.clone(), window_label.clone(), cx));
-        let sidebar = cx.new(|cx| SidebarPanel::new(state.clone(), platform.clone(), cx));
-        let editor = cx.new(|cx| EditorPanel::new(state.clone(), cx));
-        let preview = cx.new(|cx| PreviewPanel::new(state.clone(), cx));
+        let sidebar = cx.new(|cx| SidebarPanel::new(state.clone(), platform.clone(), window, cx));
+        let editor = cx.new(|cx| EditorPanel::new(state.clone(), window, cx));
+        let preview = cx.new(|cx| PreviewPanel::new(state.clone(), platform.clone(), cx));
         let status = cx.new(|cx| StatusPanel::new(state.clone(), events.clone(), cx));
 
         let dock = cx.new(|cx| {
@@ -280,19 +329,33 @@ fn panel_focus(cx: &App) -> FocusHandle {
 struct SidebarPanel {
     state: Entity<WorkspaceState>,
     platform: Arc<dyn Platform>,
+    search: Entity<InputState>,
     focus: FocusHandle,
+    _search_subscription: Subscription,
 }
 
 impl SidebarPanel {
     fn new(
         state: Entity<WorkspaceState>,
         platform: Arc<dyn Platform>,
+        window: &mut Window,
         cx: &mut App,
     ) -> Self {
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search notes"));
+        let search_state = search.clone();
+        let state_for_search = state.clone();
+        let search_subscription = cx.subscribe(&search, move |_, event: &gpui_kit::component::input::InputEvent, cx| {
+            if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                let query = search_state.read(cx).value().to_string();
+                state_for_search.update(cx, |state, cx| state.set_search_query(query, cx));
+            }
+        });
         Self {
             state,
             platform,
+            search,
             focus: panel_focus(cx),
+            _search_subscription: search_subscription,
         }
     }
 }
@@ -349,6 +412,32 @@ impl Render for SidebarPanel {
                 })),
         );
         column = column.child(
+            Button::new("undo-document")
+                .label("Undo tool edit")
+                .on_click(cx.listener(|this, _, _window, cx| {
+                    this.state.update(cx, |state, cx| state.undo_active(cx));
+                })),
+        );
+        column = column.child(
+            Button::new("redo-document")
+                .label("Redo tool edit")
+                .on_click(cx.listener(|this, _, _window, cx| {
+                    this.state.update(cx, |state, cx| state.redo_active(cx));
+                })),
+        );
+        column = column.child(Input::new(&self.search));
+        for hit in state.search_results() {
+            let path = hit.path.clone();
+            let state = self.state.clone();
+            column = column.child(
+                Button::new(ElementId::Name(format!("search-hit:{path}:{}", hit.line).into()))
+                    .label(format!("{}:{} {}", hit.path.rsplit(['/', '\\']).next().unwrap_or(&hit.path), hit.line + 1, hit.text.trim()))
+                    .on_click(move |_, _window, cx| {
+                        state.update(cx, |state, cx| state.open_document(&path, cx));
+                    }),
+            );
+        }
+        column = column.child(
             Button::new("new-window")
                 .label("New window")
                 .on_click(|_, window, cx| window.dispatch_action(Box::new(NewWindow), cx)),
@@ -386,22 +475,21 @@ impl Render for SidebarPanel {
 
 struct EditorPanel {
     state: Entity<WorkspaceState>,
-    focus: FocusHandle,
+    editor: MarkdownEditor,
 }
 
 impl EditorPanel {
-    fn new(state: Entity<WorkspaceState>, cx: &mut App) -> Self {
-        Self {
-            state,
-            focus: panel_focus(cx),
-        }
+    fn new(state: Entity<WorkspaceState>, window: &mut Window, cx: &mut App) -> Self {
+        let text = state.read(cx).text().to_owned();
+        let editor = MarkdownEditor::new(window, cx, state.clone(), &text);
+        Self { state, editor }
     }
 }
 
 impl EventEmitter<PanelEvent> for EditorPanel {}
 impl Focusable for EditorPanel {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus.clone()
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.editor.input.read(cx).focus_handle(cx)
     }
 }
 impl BasePanel for EditorPanel {
@@ -417,27 +505,36 @@ impl Panel for EditorPanel {
 }
 
 impl Render for EditorPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (text, language, query, context) = {
+            let state = self.state.read(cx);
+            (
+                state.text().to_owned(),
+                state.spell_language().map(str::to_owned),
+                state.search_query().to_owned(),
+                state.context().clone(),
+            )
+        };
+        self.editor.sync_text(&text, window, cx);
+        self.editor.refresh_decorations(&context, &text, language.as_deref(), &query, cx);
         div()
             .v_flex()
             .size_full()
-            .gap(px(4.0))
-            .p(px(10.0))
-            .child(Label::new("Source (GPUI Editor lands in Phase 11)"))
-            .child(Label::new(state.text().to_owned()))
+            .child(Editor::new(&self.editor.input).h(gpui_kit::relative(1.0)))
     }
 }
 
 struct PreviewPanel {
     state: Entity<WorkspaceState>,
+    platform: Arc<dyn Platform>,
     focus: FocusHandle,
 }
 
 impl PreviewPanel {
-    fn new(state: Entity<WorkspaceState>, cx: &mut App) -> Self {
+    fn new(state: Entity<WorkspaceState>, platform: Arc<dyn Platform>, cx: &mut App) -> Self {
         Self {
             state,
+            platform,
             focus: panel_focus(cx),
         }
     }
@@ -462,12 +559,16 @@ impl Panel for PreviewPanel {
 }
 
 impl Render for PreviewPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text = self.state.read(cx).text().to_owned();
-        div()
-            .size_full()
-            .p(px(12.0))
-            .child(TextView::markdown("calmmd-preview", text))
+        let state = self.state.clone();
+        let view = preview::view(&text, state.clone(), self.platform.clone())
+            .on_link_click(move |url, _, _window, cx| {
+                let target = url.to_string();
+                state.update(cx, |state, cx| state.open_link(&target, cx));
+            });
+        let _ = window;
+        div().size_full().p(px(12.0)).child(view)
     }
 }
 
@@ -513,13 +614,37 @@ impl Render for StatusPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let events = self.events.read(cx);
-        div()
+        let mut row = div()
             .h_flex()
             .items_center()
             .gap(px(12.0))
             .px(px(10.0))
             .child(Label::new(state.message().to_owned()))
-            .child(Label::new(format!("core events: {}", events.recent().len())))
+            .child(Label::new(format!("autosave: {}", state.autosave_status())))
+            .child(Label::new(format!("spell: {}", state.spell_language().unwrap_or("en-US"))))
             .child(Label::new(format!("window: {}", state.window_label())))
+            .child(Label::new(format!("core events: {}", events.recent().len())))
+            .child(
+                Button::new("cycle-spell")
+                    .label("Language")
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        this.state.update(cx, |state, cx| state.cycle_spell_language(cx));
+                    })),
+            )
+            .child(
+                Button::new("toggle-theme")
+                    .label("Light / dark")
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleTheme), cx)),
+            );
+        if state.conflict() {
+            row = row
+                .child(Button::new("keep-mine").label("Keep mine").on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(KeepMine), cx);
+                }))
+                .child(Button::new("load-theirs").label("Load theirs").on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(LoadTheirs), cx);
+                }));
+        }
+        row
     }
 }

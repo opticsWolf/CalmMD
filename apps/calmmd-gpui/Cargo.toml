@@ -7,7 +7,7 @@ rust-version.workspace = true
 description = "CalmMD GPUI Kit shell (migration preview)"
 
 [dependencies]
-gpui-kit = "=0.10.0"
+gpui-kit = { version = "=0.10.0", features = ["syntect"] }
 calmmd-core = { path = "../../crates/calmmd-core" }
 serde_json = "1"
 tokio = { version = "1", features = ["sync", "rt"] }

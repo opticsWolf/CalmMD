@@ -151,7 +151,8 @@ The repository also contains an early GPUI Kit shell preview:
 cargo run -p calmmd-gpui
 ```
 
-It shares the Rust core with the Tauri app and is not yet the default binary; see
+It shares the Rust core with the Tauri app and includes a native Markdown editor, preview,
+search and light/dark themes. It is not yet the default binary; see
 [`docs/RUST-CORE-PLAN.md`](docs/RUST-CORE-PLAN.md#11-gpui-kit-shell-migration-active-plan).
 
 ## Privacy

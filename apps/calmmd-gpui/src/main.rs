@@ -1,6 +1,9 @@
+mod editor;
 mod platform;
+mod preview;
 mod services;
 mod state;
+mod theme;
 mod ui;
 
 use platform::{NativePlatform, Platform};
@@ -42,6 +45,7 @@ fn data_dir() -> PathBuf {
 fn main() {
     gpui_kit::application().run(|cx| {
         gpui_kit::init(cx);
+        theme::init(cx);
 
         let mut services = Arc::new(Services::new(data_dir()));
         // The receiver is moved out once, when the GPUI event bridge is installed.

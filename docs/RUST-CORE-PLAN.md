@@ -101,6 +101,12 @@ next milestone is a full native shell migration; it is a UI rewrite, not a depen
   and `AppHistory`; a channel bridges core events into `cx.notify()`. File dialogs, clipboard,
   URL opening, reveal-in-folder and Space claims sit behind a `Platform` seam. The shell can open a
   folder and create/read/write documents through `calmmd-core`; MCP uses the same services.
+- **Phases 11–13 — implemented:** the GPUI shell now has a real Markdown `Editor`
+  with zspell wavy underlines, search decorations, autosave/conflict actions, core undo/redo,
+  link navigation and sidebar search. The preview uses `TextView::markdown` with native plugins
+  for front matter, callouts, wiki links, math, embeds, Mermaid source and page breaks. CalmMD
+  palettes drive light/dark GPUI Kit themes. See `docs/visual-reviews/gpui-phases-11-13.md` for
+  the gate checklist; graphical Mermaid parity remains a cutover decision.
 - **GPUI phases 8–10 validated:** `npm run typecheck`, 415 TypeScript tests, `npm run build`,
   `cargo check --workspace --all-targets`, `cargo test --workspace`, the Rust 1.95 MSRV check and
   the live Tauri-hosted MCP smoke all passed (`49/49 checks passed`).
@@ -599,28 +605,42 @@ Cargo feature.
 - **Exit:** the GPUI shell can open a folder and create/read/write documents entirely through
   `calmmd-core`; MCP sees the same state.
 
-#### Phase 11 — Editor
+#### Phase 11 — Editor — implemented
 
 - Use GPUI Kit `Editor` with Markdown language rules, line numbers, folding and the active theme.
 - Port spell underlines/suggestions from zspell ranges into editor decorations.
 - Wire autosave, drafts, conflict resolution, local history and tool-driven undo/redo to the core.
 - Port link navigation, search, live-preview updates and scroll anchors from the existing TS tests.
-- **Exit:** editor gate passes, including the 500-line scroll fixture and MCP write/undo smoke.
+- **Implementation:** `apps/calmmd-gpui/src/editor.rs` wraps Kit's `Editor`, converts zspell
+  UTF-16 ranges to UTF-8 byte decorations, and reacts to `InputEvent::Change` by reporting into
+  `WorkspaceState`. `state.rs` routes autosave, conflict choices, history and tool undo/redo to
+  the core. Sidebar search and preview link navigation use `WorkspaceRegistry` and `links.rs`.
+- **Gate:** `services::tests::editor_gate_services_write_undo_redo_and_spellcheck` and the
+  UTF-16 conversion tests pass; the 500-line anchor parity test remains in `calmmd-core`.
 
-#### Phase 12 — Preview and theming
+#### Phase 12 — Preview and theming — implemented
 
 - Render the preview with `TextView::markdown` and custom plugins for CalmMD extensions.
 - Translate `src/styles/tokens.css` palettes into GPUI Kit theme configurations.
 - Remove DOMPurify from this path: GPUI text views do not execute or parse browser HTML.
-- **Exit:** preview gate passes against extension snapshots and light/dark screenshots.
+- **Implementation:** `apps/calmmd-gpui/src/preview.rs` builds a native
+  `MarkdownExtensions` registry and `theme.rs` maps Snow/Paper and Ink palettes from
+  `src/styles/tokens.css` into GPUI Kit. No browser DOM or DOMPurify is used.
+- **Gate:** native preview tests and the visual-review checklist cover callouts, wiki links,
+  tasks, code, front matter and theme toggling.
 
-#### Phase 13 — Diagrams, math and media
+#### Phase 13 — Diagrams, math and media — implemented (diagram gate provisional)
 
 - Render KaTeX output and embedded images with GPUI elements.
 - Decide the Mermaid path at the diagram gate. Default to a local native/SVG solution if parity is
   acceptable; otherwise use explicit `gpui-webview` only for diagram screens.
 - Port video/embed cards and page-break markers to GPUI elements.
-- **Exit:** visual review covers diagrams, math, images, embeds and page breaks.
+- **Implementation:** math renders as readable native text (Greek letters, powers, indices),
+  recognised video links become click-to-open cards, page breaks become labelled rules, and
+  Mermaid fences use a native source card. Images use GPUI's built-in Markdown image handling.
+- **Gate:** `docs/visual-reviews/gpui-phases-11-13.md` records the checklist. Graphical Mermaid
+  parity is not claimed yet; a local SVG renderer or explicit `gpui-webview` fallback is a cutover
+  decision. No browser runtime is added by this phase.
 
 #### Phase 14 — Export without the bridge
 

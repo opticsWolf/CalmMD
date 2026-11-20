@@ -51,7 +51,9 @@ Phase 7 cleanup changed no runtime dependency: it only narrowed Tauri capabiliti
 menu and window APIs actually used by the webview and removed unused internal Rust helpers.
 
 **GPUI Kit shell preview (not the default binary yet):** `gpui-kit` 0.10.0 (Apache-2.0, re-exports a
-pinned GPUI snapshot) and `rfd` (MIT / Apache-2.0) for native file dialogs. GPUI Kit's documentation
+pinned GPUI snapshot, with its `syntect` highlighting feature enabled) and `rfd` (MIT / Apache-2.0)
+for native file dialogs. `syntect` and `syntect-assets` are already used by the Rust Markdown path.
+GPUI Kit's documentation
 prose is CC BY 4.0, so this project summarises it rather than copying it into CalmMD docs. Optional
 `gpui-webview` (MIT / Apache-2.0 through Wry) is still planned for browser-only fallbacks only.
 Each dependency's transitive licences must be reviewed again before the GPUI binary becomes the

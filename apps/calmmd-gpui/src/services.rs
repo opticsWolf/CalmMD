@@ -126,3 +126,51 @@ impl Services {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir() -> std::path::PathBuf {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("calmmd-gpui-editor-gate-{stamp}"))
+    }
+
+    #[test]
+    fn editor_gate_services_write_undo_redo_and_spellcheck() {
+        let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let services = Services::new(dir.clone());
+        services.workspace.sync("main", calmmd_core::core::dto::WorkspaceSnapshotDto {
+            root: Some(dir.to_string_lossy().into_owned()),
+            documents: Vec::new(),
+            active_document: None,
+        }).unwrap();
+
+        let created = services
+            .workspace
+            .create_document("main", None, "gate.md", Some("one\n"))
+            .unwrap();
+        let path = created.get("path").and_then(Value::as_str).unwrap().to_owned();
+
+        services
+            .workspace
+            .write_document("main", &path, "two\n", "replace", true)
+            .unwrap();
+        let undone = services.workspace.undo_document("main", &path).unwrap();
+        assert_eq!(undone.get("text").and_then(Value::as_str), Some("one\n"));
+        let redone = services.workspace.redo_document("main", &path).unwrap();
+        assert_eq!(redone.get("text").and_then(Value::as_str), Some("two\n"));
+
+        services.history.save(&path, "two\n", Some("editor gate")).unwrap();
+        assert!(!services.history.list(&path).unwrap().is_empty());
+
+        let misspelled = calmmd_core::core::spell::check_text(&services.context, "recieve", None)
+            .unwrap()
+            .unwrap_or_default();
+        assert!(!misspelled.is_empty(), "bundled dictionary should flag recieve");
+
+        let _ = std::fs::remove_dir_all(created.get("path").and_then(Value::as_str).unwrap());
+    }
+}

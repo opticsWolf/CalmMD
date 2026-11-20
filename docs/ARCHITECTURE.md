@@ -36,6 +36,10 @@ apps/calmmd-gpui/     GPUI Kit shell preview: Dock, Actions, Entity adapters, Pl
 are emitted through that context, so Tauri uses `emit_to` while GPUI forwards them into an Entity
 that calls `cx.notify()`. MCP calls the same `WorkspaceRegistry` directly in both shells.
 
+The GPUI preview's `editor.rs` wraps Kit's `Editor` and paints zspell/search decorations;
+`preview.rs` builds native Markdown extensions for CalmMD syntax; `theme.rs` maps the Snow/Paper
+and Ink palettes from `tokens.css` into Kit themes. No browser DOM is involved in the GPUI path.
+
 ## Architecture
 
 ```

@@ -1,10 +1,18 @@
 //! GPUI view state backed by `calmmd-core` services.
 
 use crate::services::{CoreEvent, Services};
-use calmmd_core::core::dto::WorkspaceDocumentDto;
-use gpui_kit::{App, AppContext, Context, Entity, EventEmitter, SharedString, Subscription};
+use calmmd_core::{
+    AppContext,
+    core::{
+        autosave::{AutosaveRequest, ResolveChoice},
+        dto::WorkspaceDocumentDto,
+        links,
+        spell,
+    },
+};
+use gpui_kit::{App, AppContext as _, Context, Entity, EventEmitter, SharedString, Subscription, Window};
 use serde_json::Value;
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, path::Path as StdPath, sync::Arc};
 
 /// Queues core events for GPUI views. The channel is drained by a GPUI task.
 pub struct CoreEvents {
@@ -48,6 +56,13 @@ pub struct DocumentItem {
     pub name: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct SearchResultItem {
+    pub path: String,
+    pub line: usize,
+    pub text: String,
+}
+
 /// Window-local state. All durable state is delegated to core services.
 pub struct WorkspaceState {
     services: Arc<Services>,
@@ -58,6 +73,12 @@ pub struct WorkspaceState {
     active: Option<String>,
     text: String,
     message: String,
+    search_query: String,
+    search_results: Vec<SearchResultItem>,
+    spell_language: Option<String>,
+    autosave_status: String,
+    conflict: bool,
+    dirty: bool,
     _event_subscription: Option<Subscription>,
 }
 
@@ -78,6 +99,12 @@ impl WorkspaceState {
             active: None,
             text: "# Welcome to CalmMD\n\nOpen a folder to begin.".into(),
             message: "Ready".into(),
+            search_query: String::new(),
+            search_results: Vec::new(),
+            spell_language: None,
+            autosave_status: "clean".into(),
+            conflict: false,
+            dirty: false,
             _event_subscription: None,
         };
         this._event_subscription = Some(cx.subscribe(&this.events, |this, _, event: &CoreEvent, cx| {
@@ -86,9 +113,12 @@ impl WorkspaceState {
                 .as_deref()
                 .map(|target| target == this.window_label)
                 .unwrap_or(true)
-                && event.name == "calmmd://workspace"
             {
-                this.apply_workspace_event(event);
+                match event.name.as_str() {
+                    "calmmd://workspace" => this.apply_workspace_event(event),
+                    "calmmd://autosave" => this.apply_autosave_event(event),
+                    _ => return,
+                }
                 cx.notify();
             }
         }));
@@ -101,6 +131,10 @@ impl WorkspaceState {
 
     pub fn events(&self) -> &Entity<CoreEvents> {
         &self.events
+    }
+
+    pub fn context(&self) -> &AppContext {
+        &self.services.context
     }
 
     pub fn window_label(&self) -> &str {
@@ -127,6 +161,30 @@ impl WorkspaceState {
         &self.message
     }
 
+    pub fn search_query(&self) -> &str {
+        &self.search_query
+    }
+
+    pub fn search_results(&self) -> &[SearchResultItem] {
+        &self.search_results
+    }
+
+    pub fn spell_language(&self) -> Option<&str> {
+        self.spell_language.as_deref()
+    }
+
+    pub fn autosave_status(&self) -> &str {
+        &self.autosave_status
+    }
+
+    pub fn conflict(&self) -> bool {
+        self.conflict
+    }
+
+    pub fn dirty(&self) -> bool {
+        self.dirty
+    }
+
     pub fn open_folder(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
         let path = path.to_string_lossy().into_owned();
         let result = self.services.workspace.sync(
@@ -146,6 +204,7 @@ impl WorkspaceState {
         self.refresh_documents();
         self.active = None;
         self.text = "Select a document, or create a new one.".into();
+        self.search_results.clear();
         self.message = "Folder opened".into();
         cx.notify();
     }
@@ -159,10 +218,59 @@ impl WorkspaceState {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_owned();
+                self.autosave_status = "clean".into();
+                self.conflict = false;
+                self.dirty = false;
                 self.message = format!("Opened {}", self.active.as_deref().unwrap_or(path));
             }
             Err(error) => self.message = error,
         }
+        cx.notify();
+    }
+
+    /// Opens a link from the preview using the same resolver as the Rust core.
+    pub fn open_link(&mut self, url: &str, cx: &mut Context<Self>) {
+        if let Some(fragment) = url.strip_prefix('#') {
+            self.message = format!("Anchor: #{fragment}");
+            cx.notify();
+            return;
+        }
+        let Some(dir) = self.active.as_deref().map(parent_dir) else {
+            self.message = "Open a document before following a link".into();
+            cx.notify();
+            return;
+        };
+        let Some(path) = links::resolve_link(url, &dir) else {
+            self.message = format!("External link: {url}");
+            cx.notify();
+            return;
+        };
+        self.open_document(&path, cx);
+    }
+
+    /// Opens a `[[wiki link]]` by path, relative path or note stem.
+    pub fn open_wiki_link(&mut self, target: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let cleaned = target.split('|').next().unwrap_or(target).trim();
+        let direct = if cleaned.to_ascii_lowercase().ends_with(".md") {
+            cleaned.to_owned()
+        } else {
+            format!("{cleaned}.md")
+        };
+        if self.documents.iter().any(|doc| doc.path == direct) {
+            self.open_document(&direct, cx);
+            return;
+        }
+        let stem = cleaned.to_ascii_lowercase();
+        if let Some(doc) = self.documents.iter().find(|doc| {
+            let name = doc.path.rsplit(['/', '\\']).next().unwrap_or(&doc.path).to_ascii_lowercase();
+            name == stem || name.trim_end_matches(".md") == stem
+        }) {
+            let path = doc.path.clone();
+            self.open_document(&path, cx);
+            return;
+        }
+        let _ = window;
+        self.message = format!("Linked note not found: {cleaned}");
         cx.notify();
     }
 
@@ -185,6 +293,36 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    /// Called by the editor on every user edit. Rust owns the autosave timer.
+    pub fn editor_changed(&mut self, text: String, cx: &mut Context<Self>) {
+        if self.text == text {
+            return;
+        }
+        self.text = text.clone();
+        self.dirty = true;
+        if let Some(path) = self.active.clone() {
+            let request = AutosaveRequest {
+                buffer: calmmd_core::core::buffers::PersistRequest {
+                    id: path.clone(),
+                    owner: Some(self.window_label.clone()),
+                    untitled_index: 0,
+                    path: Some(path),
+                    text,
+                    eol: "\n".into(),
+                    bom: false,
+                    mtime_ms: None,
+                    conflict: false,
+                },
+                idle_ms: 1000,
+                max_wait_ms: 10_000,
+                retry_delays_ms: vec![1000, 3000, 10_000],
+            };
+            self.services.autosave.touch(request);
+            self.autosave_status = "dirty".into();
+        }
+        cx.notify();
+    }
+
     pub fn save_active(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.active.clone() else {
             self.message = "No document is open".into();
@@ -198,9 +336,128 @@ impl WorkspaceState {
             "replace",
             true,
         ) {
-            Ok(_) => self.message = "Saved".into(),
+            Ok(_) => {
+                let _ = self.services.history.save(&path, &self.text, Some("GPUI save"));
+                self.services.autosave.dispose(&path);
+                self.dirty = false;
+                self.autosave_status = "clean".into();
+                self.message = "Saved".into();
+            }
             Err(error) => self.message = error,
         }
+        cx.notify();
+    }
+
+    pub fn undo_active(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.active.clone() else { return };
+        match self.services.workspace.undo_document(&self.window_label, &path) {
+            Ok(value) => {
+                if let Some(text) = value.get("text").and_then(Value::as_str) {
+                    self.text = text.to_owned();
+                    self.dirty = true;
+                }
+                self.message = "Undo".into();
+            }
+            Err(error) => self.message = error,
+        }
+        cx.notify();
+    }
+
+    pub fn redo_active(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.active.clone() else { return };
+        match self.services.workspace.redo_document(&self.window_label, &path) {
+            Ok(value) => {
+                if let Some(text) = value.get("text").and_then(Value::as_str) {
+                    self.text = text.to_owned();
+                    self.dirty = true;
+                }
+                self.message = "Redo".into();
+            }
+            Err(error) => self.message = error,
+        }
+        cx.notify();
+    }
+
+    pub fn resolve_conflict(&mut self, keep_mine: bool, cx: &mut Context<Self>) {
+        let Some(path) = self.active.clone() else { return };
+        let choice = if keep_mine {
+            ResolveChoice::KeepMine
+        } else {
+            ResolveChoice::LoadTheirs
+        };
+        match self.services.autosave.resolve(&path, choice) {
+            Ok(result) => {
+                if let Some(file) = result.file {
+                    self.text = file.text;
+                    self.dirty = false;
+                } else if keep_mine {
+                    self.dirty = false;
+                }
+                self.autosave_status = result.state.status;
+                self.conflict = result.state.conflict;
+                self.message = if keep_mine { "Kept local changes" } else { "Loaded disk version" }.into();
+            }
+            Err(error) => self.message = error,
+        }
+        cx.notify();
+    }
+
+    pub fn set_search_query(&mut self, query: String, cx: &mut Context<Self>) {
+        self.search_query = query;
+        self.run_search();
+        cx.notify();
+    }
+
+    fn run_search(&mut self) {
+        if self.search_query.trim().is_empty() {
+            self.search_results.clear();
+            return;
+        }
+        self.search_results = self
+            .services
+            .workspace
+            .search(&self.window_label, &self.search_query, false, false)
+            .ok()
+            .and_then(|value| serde_json::from_value::<Vec<Value>>(value.get("hits")?.clone()).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|hit| {
+                Some(SearchResultItem {
+                    path: hit.get("path")?.as_str()?.to_owned(),
+                    line: hit.get("line")?.as_u64().unwrap_or(0) as usize,
+                    text: hit.get("text")?.as_str()?.to_owned(),
+                })
+            })
+            .collect();
+    }
+
+    pub fn cycle_spell_language(&mut self, cx: &mut Context<Self>) {
+        let available: Vec<(String, String)> = spell::dictionaries(&self.services.context)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|dict| dict.installed || dict.bundled)
+            .filter_map(|dict| {
+                let tag = dict.languages.first()?.clone();
+                Some((dict.id, tag))
+            })
+            .collect();
+        if available.is_empty() {
+            self.message = "No dictionary available".into();
+            cx.notify();
+            return;
+        }
+        let current_id = self
+            .spell_language
+            .as_deref()
+            .and_then(|tag| spell::entry_for_lang(Some(&tag)))
+            .map(|entry| entry.id);
+        let next = available
+            .iter()
+            .position(|(id, _)| Some(id.as_str()) == current_id)
+            .map(|index| (index + 1) % available.len())
+            .unwrap_or(0);
+        self.spell_language = Some(available[next].1.clone());
+        self.message = format!("Spell language: {}", available[next].0);
         cx.notify();
     }
 
@@ -250,6 +507,7 @@ impl WorkspaceState {
                 if let Some(body) = event.payload.get("text").and_then(Value::as_str) {
                     if path == self.active.as_deref() {
                         self.text = body.to_owned();
+                        self.dirty = false;
                     }
                 }
                 self.message = "Document changed in Rust".into();
@@ -262,6 +520,26 @@ impl WorkspaceState {
         }
     }
 
+    fn apply_autosave_event(&mut self, event: &CoreEvent) {
+        let Some(state) = event.payload.get("state") else { return };
+        let id = state.get("id").and_then(Value::as_str);
+        if id != self.active.as_deref() {
+            return;
+        }
+        self.autosave_status = state
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned();
+        self.conflict = state.get("conflict").and_then(Value::as_bool).unwrap_or(false);
+        self.dirty = state.get("dirty").and_then(Value::as_bool).unwrap_or(self.dirty);
+        if self.conflict {
+            self.message = "Save conflict — choose a version".into();
+        } else if self.autosave_status == "clean" {
+            self.message = "Autosaved".into();
+        }
+    }
+
     /// Bridges one live Rust document into the webview-compatible DTO used by MCP.
     pub fn active_dto(&self) -> Option<WorkspaceDocumentDto> {
         let path = self.active.as_deref()?;
@@ -271,8 +549,8 @@ impl WorkspaceState {
             eol: "\n".into(),
             bom: false,
             mtime_ms: None,
-            dirty: false,
-            conflict: false,
+            dirty: self.dirty,
+            conflict: self.conflict,
         })
     }
 
@@ -282,4 +560,11 @@ impl WorkspaceState {
             None => "CalmMD".into(),
         }
     }
+}
+
+fn parent_dir(path: &str) -> String {
+    StdPath::new(path)
+        .parent()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
