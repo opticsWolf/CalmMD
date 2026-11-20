@@ -145,14 +145,17 @@ mod tests {
     /// emit the same declaration in a different order.
     fn normalize(html: &str) -> String {
         html.replace("\r\n", "\n")
+            .replace('\r', "")
             .replace("&quot;", "\"")
             .replace("margin-right:0.05em;top:-3.063em;", "top:-3.063em;margin-right:0.05em;")
     }
 
     fn typescript_baseline() -> String {
-        let start = TS_SNAPSHOT.find("= `\n").expect("snapshot opener") + 3;
-        let end = TS_SNAPSHOT.rfind("`;\n").expect("snapshot closer");
-        let value = TS_SNAPSHOT[start..end].trim();
+        // A Windows checkout with core.autocrlf converts the snapshot, so normalise before parsing.
+        let snapshot = TS_SNAPSHOT.replace("\r\n", "\n");
+        let start = snapshot.find("= `\n").expect("snapshot opener") + 3;
+        let end = snapshot.rfind("`;\n").expect("snapshot closer");
+        let value = snapshot[start..end].trim();
         let value = value.strip_prefix('\"').and_then(|v| v.strip_suffix('\"')).expect("snapshot string");
         normalize(value)
     }
