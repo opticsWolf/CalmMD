@@ -2,8 +2,10 @@
 
 How CalmMD is put together, and the rules that keep it working. Read [SPEC.md](../SPEC.md) first for the
 product decisions and design principles, and [CONTRIBUTING.md](../CONTRIBUTING.md) for how to work on it.
-The planned Rust service layer (Mordant, zspell, Takumi and ikat) is described in
-[`RUST-CORE-PLAN.md`](RUST-CORE-PLAN.md).
+The Rust service layer (Mordant, zspell, Takumi and ikat) is described in
+[`RUST-CORE-PLAN.md`](RUST-CORE-PLAN.md). That document also tracks the active GPUI Kit shell
+migration. The Tauri shell is still the shipped desktop app; `apps/calmmd-gpui` is the in-progress
+native shell preview.
 
 ## Commands
 
@@ -13,13 +15,26 @@ The planned Rust service layer (Mordant, zspell, Takumi and ikat) is described i
 | Browser dev (no Rust needed) | `npm run dev` → http://localhost:1420 (localStorage sandbox platform) |
 | Desktop dev | `npm run app:dev` |
 | Unit tests (TS) | `npm test` |
-| Unit tests (Rust) | `npm run test:rust` (= `cargo test` in `src-tauri`) |
+| Unit tests (Rust) | `cargo test --workspace` |
+| GPUI shell preview | `cargo run -p calmmd-gpui` (needs GPUI Kit platform dependencies) |
 | Typecheck | `npm run typecheck` |
 | Production build | `npm run app:build` |
 | Regenerate icons | `npx tauri icon assets/brand/calmmd-mark.svg` (then delete `src-tauri/icons/{android,ios}`) |
 
 On Windows, Rust needs the MSVC build tools (`winget install Microsoft.VisualStudio.2022.BuildTools`
 with the VC tools workload). On Linux, see the Tauri prerequisites (webkit2gtk-4.1, etc.).
+
+## Rust workspace
+
+```text
+crates/calmmd-core/   UI-independent services, DTOs, MCP server; no Tauri or GPUI imports
+src-tauri/            legacy Tauri shell and command adapters (still the shipped binary)
+apps/calmmd-gpui/     GPUI Kit shell preview: Dock, Actions, Entity adapters, Platform seams
+```
+
+`AppContext` gives each shell the same data directory, event sink and window registry. Core events
+are emitted through that context, so Tauri uses `emit_to` while GPUI forwards them into an Entity
+that calls `cx.notify()`. MCP calls the same `WorkspaceRegistry` directly in both shells.
 
 ## Architecture
 
@@ -36,7 +51,7 @@ src/
   core/outline.ts     heading extraction (line scanner: fences, setext, front matter) for the outline
   core/markdownService.ts  typed client for the feature-flagged Rust Markdown commands
   core/rustFlags.ts   VITE_CALMMD_* / localStorage switches for the Rust services and PDF engine
-  markdown/types.ts   DTOs mirrored from src-tauri/src/core/dto.rs
+  markdown/types.ts   DTOs mirrored from crates/calmmd-core/src/core/dto.rs
   app/preview.ts      preview controller: debounced render, DOM patch, links, task toggles
   render/markdown.ts  markdown-it + footnotes + task lists + heading ids + source-line attrs,
                       sanitised with DOMPurify. render/highlight.ts reuses the editor's Lezer grammars
@@ -267,20 +282,20 @@ src-tauri/
 See [`MCP.md`](MCP.md) for the full implementation record, tool reference and open topics, and
 [`MCP-CLIENT-SETUP.md`](MCP-CLIENT-SETUP.md) for client configuration and discovery.
 
-CalmMD can host a **local MCP server** (`src-tauri/src/mcp/`, official `rmcp` SDK, Streamable HTTP on
+CalmMD can host a **local MCP server** (`crates/calmmd-core/src/mcp/`, official `rmcp` SDK, Streamable HTTP on
 `127.0.0.1:<random port>/mcp`). It is **off until started** from File → Start MCP Server, the command
 palette, or the `--mcp` launch flag. The connection URL and a per-launch bearer token are copied to
 the clipboard; the server validates the token and the `Origin` header and never binds beyond loopback.
 
-Most tools call `src-tauri/src/core/workspace.rs` directly. The webview mirrors live buffers into
+Most tools call `crates/calmmd-core/src/core/workspace.rs` directly. The webview mirrors live buffers into
 that Rust state with `core_workspace_sync` / `core_workspace_upsert_document`, and Rust emits
 `calmmd://workspace` events for content changes, renames, creates and trashes. The remaining
 `docs`/`explorer` controllers apply those events so CodeMirror, favorites and the tree stay in step.
-Autosave now runs in `src-tauri/src/core/autosave.rs`: the webview reports edits with
+Autosave now runs in `crates/calmmd-core/src/core/autosave.rs`: the webview reports edits with
 `bufferAutosaveTouch`, and Rust owns debounce/max-wait, retries, conflict resolution
 (`keepMine` / `loadTheirs`) and `calmmd://autosave` status events. Writes and conflict-safe drafts
-are in `src-tauri/src/core/buffers.rs`. Session and Space
-records are validated and stored by `src-tauri/src/core/session.rs`; the webview still builds the
+are in `crates/calmmd-core/src/core/buffers.rs`. Session and Space
+records are validated and stored by `crates/calmmd-core/src/core/session.rs`; the webview still builds the
 snapshot from CodeMirror cursors and the sidebar, but reads and writes it through `Platform`.
 The webview keeps its immediate CodeMirror undo stack and the explorer view. File history is
 stored and queried through `core/history.rs`. PDF/HTML export resolves paths, live text, options

@@ -10,9 +10,8 @@ use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 use serde::Serialize;
-use serde_json::Value;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use crate::app::AppContext;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Mutex};
 use tools::CalmMdTools;
@@ -40,7 +39,7 @@ pub struct McpManager {
 }
 
 impl McpManager {
-    pub fn new(app: AppHandle, workspace: Arc<WorkspaceRegistry>) -> Arc<Self> {
+    pub fn new(app: AppContext, workspace: Arc<WorkspaceRegistry>) -> Arc<Self> {
         Arc::new(Self {
             bridge: McpBridge::new(app),
             workspace,
@@ -87,7 +86,7 @@ impl McpManager {
                 authenticate,
             ));
 
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             let _ = axum::serve(listener, router)
                 .with_graceful_shutdown(async move {
                     let _ = stop_rx.changed().await;
@@ -107,6 +106,10 @@ impl McpManager {
             status: status.clone(),
         });
         Ok(status)
+    }
+
+    pub async fn respond(&self, response: serde_json::Value) -> Result<(), String> {
+        self.bridge.respond(response).await
     }
 
     pub async fn stop(&self) -> McpStatus {
@@ -189,22 +192,3 @@ mod tests {
     }
 }
 
-#[tauri::command]
-pub async fn mcp_status(manager: State<'_, Arc<McpManager>>) -> Result<McpStatus, String> {
-    Ok(manager.status().await)
-}
-
-#[tauri::command]
-pub async fn mcp_start(manager: State<'_, Arc<McpManager>>) -> Result<McpStatus, String> {
-    manager.start().await
-}
-
-#[tauri::command]
-pub async fn mcp_stop(manager: State<'_, Arc<McpManager>>) -> Result<McpStatus, String> {
-    Ok(manager.stop().await)
-}
-
-#[tauri::command]
-pub async fn mcp_respond(manager: State<'_, Arc<McpManager>>, response: Value) -> Result<(), String> {
-    manager.bridge.respond(response).await
-}

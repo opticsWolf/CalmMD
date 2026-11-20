@@ -1,0 +1,89 @@
+//! Capability seams for GPUI. UI views never call platform APIs directly.
+
+use gpui_kit::{App, ClipboardItem};
+use std::path::{Path, PathBuf};
+
+/// Desktop capabilities the shell needs. Each method has a tiny, testable surface.
+#[allow(dead_code)]
+pub trait Platform: Send + Sync {
+    fn open_folder(&self) -> Option<PathBuf>;
+    fn save_file(&self, default_name: &str) -> Option<PathBuf>;
+    fn reveal(&self, path: &Path) -> Result<(), String>;
+    fn open_url(&self, url: &str, cx: &mut App);
+    fn copy(&self, text: &str, cx: &mut App);
+}
+
+/// Native implementation backed by `rfd` and OS reveal commands.
+#[allow(dead_code)]
+pub struct NativePlatform;
+
+impl Platform for NativePlatform {
+    fn open_folder(&self) -> Option<PathBuf> {
+        rfd::FileDialog::new().pick_folder()
+    }
+
+    fn save_file(&self, default_name: &str) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_file_name(default_name)
+            .save_file()
+    }
+
+    fn reveal(&self, path: &Path) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        {
+            std::process::Command::new("explorer")
+                .arg("/select,")
+                .arg(path)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open")
+                .arg("-R")
+                .arg(path)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            let target = path.parent().unwrap_or(path);
+            std::process::Command::new("xdg-open")
+                .arg(target)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn open_url(&self, url: &str, cx: &mut App) {
+        cx.open_url(url);
+    }
+
+    fn copy(&self, text: &str, cx: &mut App) {
+        cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
+    }
+}
+
+/// In-memory platform for tests and headless service checks.
+#[allow(dead_code)]
+#[derive(Default)]
+pub struct MemoryPlatform;
+
+impl Platform for MemoryPlatform {
+    fn open_folder(&self) -> Option<PathBuf> {
+        None
+    }
+
+    fn save_file(&self, _default_name: &str) -> Option<PathBuf> {
+        None
+    }
+
+    fn reveal(&self, _path: &Path) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn open_url(&self, _url: &str, _cx: &mut App) {}
+
+    fn copy(&self, _text: &str, _cx: &mut App) {}
+}

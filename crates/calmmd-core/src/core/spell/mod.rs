@@ -14,9 +14,9 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::AppHandle;
+use crate::app::AppContext;
 
-pub use catalog::entry_for_lang;
+pub use catalog::{entry_for_lang, DictionaryInfo};
 use dictionary::{is_installed, parts_for};
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -40,7 +40,7 @@ fn personal_key(id: &str) -> String {
     format!("spell/personal/{id}")
 }
 
-fn read_personal(app: &AppHandle, id: &str) -> Result<String, String> {
+fn read_personal(app: &AppContext, id: &str) -> Result<String, String> {
     Ok(crate::kv::read(app, &personal_key(id))?.unwrap_or_default())
 }
 
@@ -68,7 +68,7 @@ fn add_personal_word(current: &str, word: &str) -> String {
 }
 
 /// Resolves a language to a dictionary that is actually available on this machine.
-fn available_id(app: &AppHandle, lang: Option<&str>) -> Option<&'static str> {
+fn available_id(app: &AppContext, lang: Option<&str>) -> Option<&'static str> {
     let entry = entry_for_lang(lang)?;
     if entry.bundled || is_installed(app, entry.id) {
         Some(entry.id)
@@ -109,50 +109,46 @@ fn check_text_with_parts(text: &str, id: &str, aff: &str, dic: &str, personal_wo
     Ok(Some(ranges))
 }
 
-fn check_with_app(app: &AppHandle, word: &str, lang: Option<&str>) -> Result<Option<SpellCheckDto>, String> {
+fn check_word_with_ctx(app: &AppContext, word: &str, lang: Option<&str>) -> Result<Option<SpellCheckDto>, String> {
     let Some(id) = available_id(app, lang) else { return Ok(None) };
     let (aff, dic) = parts_for(app, id)?.expect("available dictionary has files");
     let personal = read_personal(app, id)?;
     check_with_parts(word, id, &aff, &dic, &personal)
 }
 
-fn check_text_with_app(app: &AppHandle, text: &str, lang: Option<&str>) -> Result<Option<Vec<(u32, u32)>>, String> {
+fn check_text_with_ctx(app: &AppContext, text: &str, lang: Option<&str>) -> Result<Option<Vec<(u32, u32)>>, String> {
     let Some(id) = available_id(app, lang) else { return Ok(None) };
     let (aff, dic) = parts_for(app, id)?.expect("available dictionary has files");
     let personal = read_personal(app, id)?;
     check_text_with_parts(text, id, &aff, &dic, &personal)
 }
 
-#[tauri::command]
-pub fn core_spell_check(app: AppHandle, word: String, lang: Option<String>) -> Result<Option<SpellCheckDto>, String> {
-    check_with_app(&app, &word, lang.as_deref())
+pub fn check(app: &AppContext, word: &str, lang: Option<&str>) -> Result<Option<SpellCheckDto>, String> {
+    check_word_with_ctx(app, word, lang)
 }
 
-#[tauri::command]
-pub fn core_spell_check_text(app: AppHandle, text: String, lang: Option<String>) -> Result<Option<Vec<(u32, u32)>>, String> {
-    check_text_with_app(&app, &text, lang.as_deref())
+pub fn check_text(app: &AppContext, text: &str, lang: Option<&str>) -> Result<Option<Vec<(u32, u32)>>, String> {
+    check_text_with_ctx(app, text, lang)
 }
 
 /// Returns `true` when the Rust service handled the word; `false` asks the webview to fall back
 /// to the OS user dictionary (unknown language).
-#[tauri::command]
-pub fn core_spell_learn(app: AppHandle, word: String, lang: Option<String>) -> Result<bool, String> {
-    let Some(id) = available_id(&app, lang.as_deref()) else { return Ok(false) };
+pub fn learn(app: &AppContext, word: &str, lang: Option<&str>) -> Result<bool, String> {
+    let Some(id) = available_id(app, lang) else { return Ok(false) };
     let word = word.trim();
     if word.is_empty() || !word.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '\'' | '’')) {
         return Ok(true);
     }
-    let current = read_personal(&app, id)?;
+    let current = read_personal(app, id)?;
     let updated = add_personal_word(&current, word);
     if updated != current {
-        crate::kv::write(&app, &personal_key(id), &updated)?;
+        crate::kv::write(app, &personal_key(id), &updated)?;
         cache().clear();
     }
     Ok(true)
 }
 
-#[tauri::command]
-pub fn core_spell_dictionaries(app: AppHandle) -> Result<Vec<catalog::DictionaryInfo>, String> {
+pub fn dictionaries(app: &AppContext) -> Result<Vec<catalog::DictionaryInfo>, String> {
     Ok(catalog::DICTIONARIES
         .iter()
         .map(|entry| catalog::DictionaryInfo {
@@ -160,7 +156,7 @@ pub fn core_spell_dictionaries(app: AppHandle) -> Result<Vec<catalog::Dictionary
             label: entry.label.to_string(),
             languages: entry.languages.iter().map(|tag| tag.to_string()).collect(),
             license: entry.license.to_string(),
-            installed: entry.bundled || is_installed(&app, entry.id),
+            installed: entry.bundled || is_installed(app, entry.id),
             bundled: entry.bundled,
             source: format!("{}/{}", entry.base, catalog::remote_dir(entry)),
         })
@@ -192,13 +188,12 @@ async fn download(client: &reqwest::Client, url: &str) -> Result<String, String>
 }
 
 /// Installs one curated dictionary. No network access happens unless this command is called.
-#[tauri::command]
-pub async fn core_spell_dictionary_install(app: AppHandle, id: String) -> Result<(), String> {
-    let entry = catalog::by_id(&id).ok_or_else(|| format!("unknown dictionary: {id}"))?;
+pub async fn install_dictionary(app: &AppContext, id: &str) -> Result<(), String> {
+    let entry = catalog::by_id(id).ok_or_else(|| format!("unknown dictionary: {id}"))?;
     if entry.bundled {
         return Ok(());
     }
-    let dir = dictionary::installed_dir(&app, &id)?;
+    let dir = dictionary::installed_dir(app, id)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
@@ -222,9 +217,8 @@ pub async fn core_spell_dictionary_install(app: AppHandle, id: String) -> Result
     Ok(())
 }
 
-#[tauri::command]
-pub fn core_spell_dictionary_remove(app: AppHandle, id: String) -> Result<(), String> {
-    let dir = dictionary::installed_dir(&app, &id)?;
+pub fn remove_dictionary(app: &AppContext, id: &str) -> Result<(), String> {
+    let dir = dictionary::installed_dir(app, id)?;
     for name in ["index.aff", "index.dic", "LICENSE"] {
         match fs::remove_file(dir.join(name)) {
             Ok(()) => {}

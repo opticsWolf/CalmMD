@@ -1,0 +1,14 @@
+[package]
+name = "calmmd-gpui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CalmMD GPUI Kit shell (migration preview)"
+
+[dependencies]
+gpui-kit = "=0.10.0"
+calmmd-core = { path = "../../crates/calmmd-core" }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "rt"] }
+rfd = "0.15"

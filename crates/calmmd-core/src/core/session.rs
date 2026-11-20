@@ -8,7 +8,7 @@ use super::history::HistoryStore;
 use crate::kv;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::AppHandle;
+use crate::app::AppContext;
 
 pub const SESSION_KEY: &str = "session";
 pub const SPACE_PREFIX: &str = "space/";
@@ -245,38 +245,9 @@ impl<S: HistoryStore> SessionStore<S> {
     }
 }
 
-fn app_store(app: &AppHandle) -> SessionStore<crate::core::history::AppHistoryStore> {
+
+pub fn app_store(app: &AppContext) -> SessionStore<crate::core::history::AppHistoryStore> {
     SessionStore::new(crate::core::history::AppHistoryStore::new(app.clone()))
-}
-
-#[tauri::command]
-pub fn core_session_get(app: AppHandle, key: String) -> Result<Option<SessionDto>, String> {
-    app_store(&app).session(&key)
-}
-
-#[tauri::command]
-pub fn core_session_set(app: AppHandle, key: String, session: SessionDto) -> Result<(), String> {
-    app_store(&app).set_session(&key, &session)
-}
-
-#[tauri::command]
-pub fn core_space_get(app: AppHandle, id: String) -> Result<Option<SpaceDto>, String> {
-    app_store(&app).space(&id)
-}
-
-#[tauri::command]
-pub fn core_space_save(app: AppHandle, space: SpaceDto) -> Result<(), String> {
-    app_store(&app).save_space(&space)
-}
-
-#[tauri::command]
-pub fn core_space_remove(app: AppHandle, id: String) -> Result<(), String> {
-    app_store(&app).remove_space(&id)
-}
-
-#[tauri::command]
-pub fn core_spaces(app: AppHandle) -> Result<Vec<SpaceDto>, String> {
-    app_store(&app).spaces()
 }
 
 #[cfg(test)]

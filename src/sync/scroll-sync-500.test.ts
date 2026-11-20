@@ -11,7 +11,7 @@ import {
 } from './scrollMap';
 
 const fixture = readFileSync(
-  'src-tauri/src/core/markdown/tests/fixtures/scroll-sync-500.md',
+  'crates/calmmd-core/src/core/markdown/tests/fixtures/scroll-sync-500.md',
   'utf8',
 );
 const baseline: Array<[number, number]> = JSON.parse(

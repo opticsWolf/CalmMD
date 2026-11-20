@@ -1,4 +1,4 @@
-use crate::windows::SpaceClaims;
+use crate::app::WindowInfo;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -10,7 +10,6 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{oneshot, Mutex};
 
 type Reply = Result<Value, String>;
@@ -28,13 +27,13 @@ pub struct TargetArgs {
 
 /// Correlates MCP tool calls with responses from the running webview.
 pub struct McpBridge {
-    app: AppHandle,
+    app: crate::app::AppContext,
     pending: Mutex<HashMap<String, oneshot::Sender<Reply>>>,
     next: AtomicU64,
 }
 
 impl McpBridge {
-    pub fn new(app: AppHandle) -> Arc<Self> {
+    pub fn new(app: crate::app::AppContext) -> Arc<Self> {
         Arc::new(Self {
             app,
             pending: Mutex::new(HashMap::new()),
@@ -48,34 +47,22 @@ impl McpBridge {
             return Ok(Some(label.clone()));
         }
         if let Some(space) = &target.space_id {
-            let claims = self
-                .app
-                .try_state::<SpaceClaims>()
-                .ok_or("Space state is not available")?;
-            return Ok(claims.holder(space));
+            return Ok(self.app.space_holder(space));
         }
         Ok(None)
     }
 
     /// Window labels, titles and claimed Space ids for discovery.
     pub fn windows(&self) -> Result<Value, String> {
-        let claims = self
-            .app
-            .try_state::<SpaceClaims>()
-            .ok_or("Space state is not available")?;
         let windows = self
             .app
-            .webview_windows()
-            .into_values()
-            .map(|window| {
-                let label = window.label().to_string();
-                let title = window.title().unwrap_or_else(|_| label.clone());
-                json!({
-                    "label": label,
-                    "title": title,
-                    "spaceId": claims.space_for_window(&label),
-                })
-            })
+            .windows()
+            .into_iter()
+            .map(|WindowInfo { label, title, space_id }| json!({
+                "label": label,
+                "title": title,
+                "spaceId": space_id,
+            }))
             .collect::<Vec<_>>();
         Ok(json!({ "windows": windows }))
     }
@@ -96,10 +83,7 @@ impl McpBridge {
             "method": method,
             "params": params,
         });
-        if let Err(e) = self.app.emit_to(label, "calmmd://mcp/request", payload) {
-            self.pending.lock().await.remove(&id);
-            return Err(e.to_string());
-        }
+        self.app.emit_to(label, "calmmd://mcp/request", payload);
 
         // A trash tool may wait for the user to confirm in the UI.
         let answered = tokio::time::timeout(Duration::from_secs(120), rx).await;

@@ -137,9 +137,9 @@ mod tests {
 
     const CORPUS: &str = include_str!("tests/fixtures/extension-corpus.md");
     const SCROLL_FIXTURE: &str = include_str!("tests/fixtures/scroll-sync-500.md");
-    const TS_SNAPSHOT: &str = include_str!("../../../../src/render/__snapshots__/markdown.test.ts.snap");
+    const TS_SNAPSHOT: &str = include_str!("../../../../../src/render/__snapshots__/markdown.test.ts.snap");
     const SCROLL_ANCHORS: &str =
-        include_str!("../../../../src/render/__snapshots__/scroll-sync-500.anchors.json");
+        include_str!("../../../../../src/render/__snapshots__/scroll-sync-500.anchors.json");
 
     /// Only serializer differences: DOMPurify decodes code-block quotes, and KaTeX 0.16/0.19
     /// emit the same declaration in a different order.

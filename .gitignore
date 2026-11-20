@@ -7,6 +7,7 @@ dist-site/
 coverage/
 .vite/
 *.tsbuildinfo
+target/
 src-tauri/target/
 src-tauri/gen/
 

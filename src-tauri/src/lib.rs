@@ -1,7 +1,7 @@
 mod cdp;
-mod core;
+mod commands;
+mod context;
 mod export;
-mod mcp;
 mod fsops;
 mod kv;
 mod search;
@@ -9,7 +9,13 @@ mod spell;
 mod tree;
 mod windows;
 
-use std::path::Path;
+use calmmd_core::{
+    core::{autosave, workspace::WorkspaceRegistry},
+    mcp::McpManager,
+    windows::SpaceClaims,
+};
+use context::AppState;
+use std::{path::Path, sync::Arc};
 use tauri::{Emitter, Manager};
 
 fn file_args<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
@@ -34,11 +40,19 @@ fn launch_paths() -> Vec<String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let workspace = core::workspace::WorkspaceRegistry::new(app.handle().clone());
+            let claims = Arc::new(SpaceClaims::default());
+            let context = context::app_context(app.handle(), claims.clone());
+            app.manage(AppState {
+                context: context.clone(),
+                claims: claims.clone(),
+            });
+
+            let workspace = WorkspaceRegistry::new(context.clone());
             app.manage(workspace.clone());
-            let manager = mcp::McpManager::new(app.handle().clone(), workspace);
+            let manager = McpManager::new(context.clone(), workspace);
             app.manage(manager.clone());
-            app.manage(core::autosave::create_app_autosave(app.handle()));
+            app.manage(autosave::create_app_autosave(&context));
+
             // `--mcp` starts the loopback server at launch for clients that expect it.
             if std::env::args().any(|a| a == "--mcp") {
                 tauri::async_runtime::spawn(async move {
@@ -47,8 +61,6 @@ pub fn run() {
             }
             Ok(())
         })
-        // Opening a file while CalmMD is running hands it to the running instance instead of
-        // starting a second one.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let paths = file_args(args.into_iter().skip(1));
             let target = app
@@ -65,10 +77,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(windows::SpaceClaims::default())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                window.state::<windows::SpaceClaims>().release(window.label());
+                window.state::<AppState>().claims.release(window.label());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -102,47 +113,47 @@ pub fn run() {
             spell::spell_check,
             spell::spell_check_text,
             spell::spell_learn,
-            mcp::mcp_status,
-            mcp::mcp_start,
-            mcp::mcp_stop,
-            mcp::mcp_respond,
-            core::markdown_parse,
-            core::markdown_render,
-            core::markdown_highlight_code,
-            core::workspace::core_workspace_sync,
-            core::workspace::core_workspace_upsert_document,
-            core::buffers::core_buffer_draft_write,
-            core::buffers::core_buffer_draft_delete,
-            core::buffers::core_buffer_drafts,
-            core::buffers::core_buffer_persist,
-            core::buffers::core_buffer_load,
-            core::autosave::core_autosave_touch,
-            core::autosave::core_autosave_flush,
-            core::autosave::core_autosave_status,
-            core::autosave::core_autosave_resolve,
-            core::history::core_history_list,
-            core::history::core_history_read,
-            core::history::core_history_save,
-            core::history::core_history_remove,
-            core::history::core_history_rename,
-            core::history::core_history_clear_file,
-            core::history::core_history_clear_all,
-            core::history::core_history_usage,
-            core::autosave::core_autosave_dispose,
-            core::session::core_session_get,
-            core::session::core_session_set,
-            core::session::core_space_get,
-            core::session::core_space_save,
-            core::session::core_space_remove,
-            core::session::core_spaces,
-            core::export::takumi::takumi_pdf,
-            core::export::assemble::core_export_assemble,
-            core::spell::core_spell_check,
-            core::spell::core_spell_check_text,
-            core::spell::core_spell_learn,
-            core::spell::core_spell_dictionaries,
-            core::spell::core_spell_dictionary_install,
-            core::spell::core_spell_dictionary_remove,
+            commands::mcp_status,
+            commands::mcp_start,
+            commands::mcp_stop,
+            commands::mcp_respond,
+            commands::markdown_parse,
+            commands::markdown_render,
+            commands::markdown_highlight_code,
+            commands::core_workspace_sync,
+            commands::core_workspace_upsert_document,
+            commands::core_buffer_draft_write,
+            commands::core_buffer_draft_delete,
+            commands::core_buffer_drafts,
+            commands::core_buffer_persist,
+            commands::core_buffer_load,
+            commands::core_autosave_touch,
+            commands::core_autosave_flush,
+            commands::core_autosave_status,
+            commands::core_autosave_resolve,
+            commands::core_history_list,
+            commands::core_history_read,
+            commands::core_history_save,
+            commands::core_history_remove,
+            commands::core_history_rename,
+            commands::core_history_clear_file,
+            commands::core_history_clear_all,
+            commands::core_history_usage,
+            commands::core_autosave_dispose,
+            commands::core_session_get,
+            commands::core_session_set,
+            commands::core_space_get,
+            commands::core_space_save,
+            commands::core_space_remove,
+            commands::core_spaces,
+            commands::core_export_assemble,
+            commands::takumi_pdf,
+            commands::core_spell_check,
+            commands::core_spell_check_text,
+            commands::core_spell_learn,
+            commands::core_spell_dictionaries,
+            commands::core_spell_dictionary_install,
+            commands::core_spell_dictionary_remove,
             launch_paths,
         ])
         .run(tauri::generate_context!())

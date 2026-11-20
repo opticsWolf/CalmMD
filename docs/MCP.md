@@ -63,13 +63,13 @@ Implemented and building as of this document:
 MCP client (Claude Desktop, Cursor, VS Code, …)
         │  MCP JSON-RPC / Streamable HTTP
         ▼
-Rust MCP server                         src-tauri/src/mcp/
+Rust MCP server                         crates/calmmd-core/src/mcp/
   mod.rs      server lifecycle, auth, commands
   bridge.rs   window routing + export request/response correlation
   tools.rs    tools, prompts and read-only resources
         │  direct Rust calls
         ▼
-Rust workspace                          src-tauri/src/core/workspace.rs
+Rust workspace                          crates/calmmd-core/src/core/workspace.rs
   rooted path sandbox, live buffers, history, link rewrites, file ops
         │  tauri event: calmmd://workspace
         ▼
@@ -324,8 +324,8 @@ When `--mcp` is used, startup begins before the webview has loaded settings; tha
 
 Rust:
 
-- `src-tauri/src/mcp/mod.rs`, `bridge.rs`, `tools.rs`
-- `src-tauri/src/core/workspace.rs`, `history.rs`, `links.rs`, `paths.rs` — live workspace services
+- `crates/calmmd-core/src/mcp/mod.rs`, `bridge.rs`, `tools.rs`
+- `crates/calmmd-core/src/core/workspace.rs`, `history.rs`, `links.rs`, `paths.rs` — live workspace services
 - `src-tauri/src/lib.rs` — module, setup, commands, `--mcp`
 - `src-tauri/Cargo.toml` / `Cargo.lock` — `rmcp`, `axum`, `tokio`, `uuid`, `schemars`, `sha2`; MSRV 1.91
 

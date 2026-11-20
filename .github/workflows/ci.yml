@@ -54,17 +54,17 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.91.0
+          toolchain: 1.95.0
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
 
       - run: npm ci
       - run: npm run build
       - name: Rust unit tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --workspace
       - name: Native Takumi PDF test
-        run: cargo test --manifest-path src-tauri/Cargo.toml renders_a_simple_pdf
+        run: cargo test -p calmmd-core renders_a_simple_pdf
       # Paged.js fallback: real pagination via headless Chromium over CDP. GitHub runners ship Chrome or Edge.
       - name: PDF pagination fallback test
         run: cargo test --manifest-path src-tauri/Cargo.toml prints_paginated_pdf -- --include-ignored

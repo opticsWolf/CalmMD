@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, RwLock},
     time::UNIX_EPOCH,
 };
-use tauri::{AppHandle, Emitter};
+use crate::app::AppContext;
 
 const MAX_FILES: usize = 5000;
 const DEFAULT_WINDOW: &str = "main";
@@ -700,11 +700,11 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
 #[derive(Clone)]
 pub struct WorkspaceRegistry {
     store: Arc<WorkspaceStore<AppHistoryStore>>,
-    app: AppHandle,
+    app: AppContext,
 }
 
 impl WorkspaceRegistry {
-    pub fn new(app: AppHandle) -> Arc<Self> {
+    pub fn new(app: AppContext) -> Arc<Self> {
         Arc::new(Self {
             store: WorkspaceStore::with_history(History::new(app.clone())),
             app,
@@ -725,7 +725,7 @@ impl WorkspaceRegistry {
 
     fn emit(&self, window: &str, events: Vec<WorkspaceEventDto>) {
         for event in events {
-            let _ = self.app.emit_to(window, "calmmd://workspace", event);
+            self.app.emit_to(window, "calmmd://workspace", event);
         }
     }
 
@@ -854,24 +854,6 @@ fn outline(text: &str) -> Vec<Value> {
     }
 }
 
-#[tauri::command]
-pub fn core_workspace_sync(
-    window: tauri::Window,
-    registry: tauri::State<'_, Arc<WorkspaceRegistry>>,
-    snapshot: WorkspaceSnapshotDto,
-) -> Result<(), String> {
-    registry.sync(window.label(), snapshot)
-}
-
-#[tauri::command]
-pub fn core_workspace_upsert_document(
-    window: tauri::Window,
-    registry: tauri::State<'_, Arc<WorkspaceRegistry>>,
-    document: WorkspaceDocumentDto,
-    active_document: Option<String>,
-) -> Result<(), String> {
-    registry.upsert_document(window.label(), document, active_document)
-}
 
 #[cfg(test)]
 mod tests {

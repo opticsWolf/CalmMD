@@ -1,4 +1,4 @@
-/** DTOs returned by the Rust core Markdown service. Mirrors `src-tauri/src/core/dto.rs`. */
+/** DTOs returned by the Rust core Markdown service. Mirrors `crates/calmmd-core/src/core/dto.rs`. */
 
 export interface HeadingDto {
   level: number;

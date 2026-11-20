@@ -1,4 +1,4 @@
-/** Shared shapes for the local MCP bridge. Mirrored by `src-tauri/src/mcp/`. */
+/** Shared shapes for the local MCP bridge. Mirrored by `crates/calmmd-core/src/mcp/`. */
 
 export interface McpConnectionInfo {
   enabled: boolean;

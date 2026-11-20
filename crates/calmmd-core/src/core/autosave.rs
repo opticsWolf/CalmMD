@@ -13,7 +13,7 @@ use std::{
     sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Emitter, State};
+use crate::app::AppContext;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -357,13 +357,21 @@ impl<S: HistoryStore + 'static> AutosaveService<S> {
     }
 }
 
-/// Tokio is available in async tests and inside Tauri's async runtime, but sync Tauri commands
-/// execute on the main thread without a current Tokio handle. Fall back to Tauri's runtime there.
+/// Reuse an ambient Tokio runtime when present (async tests, MCP server), otherwise use the
+/// core's own runtime. Neither UI shell needs to provide one.
 fn spawn(future: impl Future<Output = ()> + Send + 'static) {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn(future);
     } else {
-        tauri::async_runtime::spawn(future);
+        static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+        RUNTIME
+            .get_or_init(|| {
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("autosave runtime")
+            })
+            .spawn(future);
     }
 }
 
@@ -371,44 +379,15 @@ fn duration_from_ms(ms: u64) -> Duration {
     Duration::from_millis(ms)
 }
 
-// Tauri-managed concrete service.
+
 pub type AppAutosave = AutosaveService<crate::core::history::AppHistoryStore>;
 
-pub fn create_app_autosave(app: &AppHandle) -> AppAutosave {
+pub fn create_app_autosave(app: &AppContext) -> AppAutosave {
     let store = Arc::new(BufferStore::new(crate::core::history::AppHistoryStore::new(app.clone())));
     let app = app.clone();
     AutosaveService::new(store, move |event| {
-        let _ = app.emit("calmmd://autosave", event);
+        app.emit("calmmd://autosave", event);
     })
-}
-
-#[tauri::command]
-pub fn core_autosave_touch(service: State<'_, AppAutosave>, request: AutosaveRequest) -> AutosaveState {
-    service.touch(request)
-}
-
-#[tauri::command]
-pub fn core_autosave_flush(service: State<'_, AppAutosave>, id: String) -> AutosaveState {
-    service.flush(&id)
-}
-
-#[tauri::command]
-pub fn core_autosave_status(service: State<'_, AppAutosave>, id: String) -> Option<AutosaveState> {
-    service.status(&id)
-}
-
-#[tauri::command]
-pub fn core_autosave_resolve(
-    service: State<'_, AppAutosave>,
-    id: String,
-    choice: ResolveChoice,
-) -> Result<ResolveResult, String> {
-    service.resolve(&id, choice)
-}
-
-#[tauri::command]
-pub fn core_autosave_dispose(service: State<'_, AppAutosave>, id: String) {
-    service.dispose(&id)
 }
 
 #[cfg(test)]

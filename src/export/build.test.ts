@@ -7,7 +7,7 @@ const opts: ExportOptions = { title: 'My "Notes"', theme: 'paper', userCss: null
 const assets = { baseCss: '.md-body{}', fontCss: '@font-face{}', pagedJs: 'console.log("paged")' };
 
 describe('buildBody', () => {
-  const fixture = readFileSync('src-tauri/src/core/markdown/tests/fixtures/extension-corpus.md', 'utf8');
+  const fixture = readFileSync('crates/calmmd-core/src/core/markdown/tests/fixtures/extension-corpus.md', 'utf8');
 
   it('matches the TypeScript baseline snapshot', async () => {
     const body = await buildBody(fixture, '/notes/extension-corpus.md', opts, { readImage: async () => null });

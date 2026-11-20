@@ -9,7 +9,7 @@ const update = process.env.CALMMD_UPDATE_SCROLL_ANCHORS === '1';
 describe('500-line source-anchor baseline', () => {
   it.skipIf(!update)('regenerates the TypeScript baseline', () => {
     const fixture = readFileSync(
-      'src-tauri/src/core/markdown/tests/fixtures/scroll-sync-500.md',
+      'crates/calmmd-core/src/core/markdown/tests/fixtures/scroll-sync-500.md',
       'utf8',
     );
     const html = createRenderer().render(fixture, {

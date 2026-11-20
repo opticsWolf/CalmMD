@@ -37,8 +37,8 @@ npm run test:rust    # cargo test
 npm run build
 ```
 
-The current Tauri desktop build requires Rust 1.91 or newer (matching `src-tauri/Cargo.toml`).
-The GPUI Kit migration raises the MSRV to 1.92; see section 11 of `docs/RUST-CORE-PLAN.md`.
+The workspace requires Rust 1.95 or newer. The shipped Tauri shell and the GPUI Kit preview share
+`crates/calmmd-core`; see section 11 of `docs/RUST-CORE-PLAN.md` before changing the split.
 
 `cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored` also runs the real PDF test
 (it needs Chrome or Edge). CI runs all of this on Windows, macOS and Linux.

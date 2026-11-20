@@ -15,7 +15,7 @@ function dom(html: string) {
 }
 
 describe('frozen extension corpus', () => {
-  const fixture = readFileSync('src-tauri/src/core/markdown/tests/fixtures/extension-corpus.md', 'utf8');
+  const fixture = readFileSync('crates/calmmd-core/src/core/markdown/tests/fixtures/extension-corpus.md', 'utf8');
 
   it('matches the TypeScript baseline snapshot', () => {
     expect(render(fixture, '/notes/extension-corpus.md')).toMatchSnapshot();

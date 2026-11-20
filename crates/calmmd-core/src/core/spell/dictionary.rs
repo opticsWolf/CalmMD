@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use tauri::{AppHandle, Manager};
+use crate::app::AppContext;
 use zspell::{DictBuilder, Dictionary};
 
 use super::catalog;
@@ -26,17 +26,13 @@ const FR_DIC: &str = include_str!("dictionaries/fr_FR/index.dic");
 const ES_AFF: &str = include_str!("dictionaries/es_ES/index.aff");
 const ES_DIC: &str = include_str!("dictionaries/es_ES/index.dic");
 
-pub fn dictionaries_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("dictionaries");
+pub fn dictionaries_dir(app: &AppContext) -> Result<PathBuf, String> {
+    let dir = app.data_dir().join("dictionaries");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
-pub fn installed_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+pub fn installed_dir(app: &AppContext, id: &str) -> Result<PathBuf, String> {
     let entry = catalog::by_id(id).ok_or_else(|| format!("unknown dictionary: {id}"))?;
     if entry.bundled || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(format!("dictionary {id} cannot be installed locally"));
@@ -44,7 +40,7 @@ pub fn installed_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     Ok(dictionaries_dir(app)?.join(id))
 }
 
-pub fn is_installed(app: &AppHandle, id: &str) -> bool {
+pub fn is_installed(app: &AppContext, id: &str) -> bool {
     installed_dir(app, id)
         .map(|dir| dir.join("index.aff").is_file() && dir.join("index.dic").is_file())
         .unwrap_or(false)
@@ -67,7 +63,7 @@ fn read_parts(path: &Path, name: &str) -> Result<String, String> {
 }
 
 /// Source files for a dictionary: bundled first, then the locally installed copy.
-pub fn parts_for(app: &AppHandle, id: &str) -> Result<Option<(Cow<'static, str>, Cow<'static, str>)>, String> {
+pub fn parts_for(app: &AppContext, id: &str) -> Result<Option<(Cow<'static, str>, Cow<'static, str>)>, String> {
     if let Some((aff, dic)) = parts_for_bundled(id) {
         return Ok(Some((Cow::Borrowed(aff), Cow::Borrowed(dic))));
     }

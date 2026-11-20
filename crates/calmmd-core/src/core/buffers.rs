@@ -10,7 +10,7 @@ use super::workspace::{decode_from_disk, encode_for_disk};
 use crate::{fsops, kv};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path, time::SystemTime};
-use tauri::AppHandle;
+use crate::app::AppContext;
 
 pub const DRAFT_PREFIX: &str = "draft/";
 
@@ -232,33 +232,9 @@ impl<S: HistoryStore> BufferStore<S> {
     }
 }
 
-fn app_store(app: &AppHandle) -> BufferStore<crate::core::history::AppHistoryStore> {
+
+pub fn app_store(app: &AppContext) -> BufferStore<crate::core::history::AppHistoryStore> {
     BufferStore::new(crate::core::history::AppHistoryStore::new(app.clone()))
-}
-
-#[tauri::command]
-pub fn core_buffer_draft_write(app: AppHandle, id: String, record: DraftRecord) -> Result<(), String> {
-    app_store(&app).write_draft(&id, &record)
-}
-
-#[tauri::command]
-pub fn core_buffer_draft_delete(app: AppHandle, id: String) -> Result<(), String> {
-    app_store(&app).delete_draft(&id)
-}
-
-#[tauri::command]
-pub fn core_buffer_drafts(app: AppHandle) -> Result<Vec<DraftEntry>, String> {
-    app_store(&app).drafts()
-}
-
-#[tauri::command]
-pub fn core_buffer_persist(app: AppHandle, request: PersistRequest) -> Result<PersistResult, String> {
-    app_store(&app).persist(request)
-}
-
-#[tauri::command]
-pub fn core_buffer_load(app: AppHandle, path: String) -> Result<DecodedFile, String> {
-    app_store(&app).load(&path)
 }
 
 #[cfg(test)]

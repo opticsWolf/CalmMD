@@ -75,7 +75,7 @@ next milestone is a full native shell migration; it is a UI rewrite, not a depen
   weight through `VITE_CALMMD_TAKUMI_FONT_WEIGHT` or `localStorage['calmmd.takumi.fontWeight']`
   (default `350`); headings keep their explicit CSS weights. Native and WASM PDF exports inject the
   same CSS, and native form controls are replaced with flow-positioned SVG checkbox marks.
-- **Phase 6 — in progress:** a Rust workspace owns the rooted path sandbox, live buffer mirror,
+- **Phase 6 — done:** a Rust workspace owns the rooted path sandbox, live buffer mirror,
   file operations, history snapshots and link-safe rename/move. MCP calls those services directly
   for status, list, read, outline, search, create, write, rename, move, trash and triage; webview
   state-change events update the editor and explorer. A Rust buffer service now owns durable draft
@@ -91,9 +91,22 @@ next milestone is a full native shell migration; it is a UI rewrite, not a depen
 - **Phase 7 — done:** the Tauri capability set is explicit instead of `core:default`; dead Rust
   helpers and compiler warnings were removed. Superseded TS fallbacks and DOMPurify were reviewed
   and kept deliberately for browser/test builds and webview safety. No runtime dependency changed.
+- **Phase 8 — done:** the repository is a Cargo workspace with `calmmd-core`, legacy
+  `calmmd-tauri` and `calmmd-gpui`. Core services no longer import Tauri; the Tauri shell adapts
+  `AppContext`, emits core events and registers the original commands. A minimal GPUI Kit window
+  opens with `gpui_kit::init` and `Root`.
+- **Phase 9 — done:** the GPUI shell has a `DockArea` sidebar/tab/status layout, Actions and key
+  bindings, plus open/close/next-window actions. No Tauri menu is needed.
+- **Phase 10 — done:** GPUI `Entity` adapters own `WorkspaceRegistry`, `AppAutosave`, `SessionStore`
+  and `AppHistory`; a channel bridges core events into `cx.notify()`. File dialogs, clipboard,
+  URL opening, reveal-in-folder and Space claims sit behind a `Platform` seam. The shell can open a
+  folder and create/read/write documents through `calmmd-core`; MCP uses the same services.
+- **GPUI phases 8–10 validated:** `npm run typecheck`, 415 TypeScript tests, `npm run build`,
+  `cargo check --workspace --all-targets`, `cargo test --workspace`, the Rust 1.95 MSRV check and
+  the live Tauri-hosted MCP smoke all passed (`49/49 checks passed`).
 - **Decision change — GPUI Kit is the target shell:** Tauri compatibility work is frozen. See
   section 11 for the active migration plan. GPUI Kit 0.10.0 is Apache-2.0 and re-exports GPUI;
-  the current locked dependency graph requires Rust 1.92+. Its Windows build needs MSVC + CMake,
+  the actual locked dependency graph requires Rust 1.95+; earlier 1.92 guidance was corrected after `gpui-pre-util` and `gpui-pre` failed on 1.92–1.94. Its Windows build needs MSVC + CMake,
   macOS needs macOS 15+, and Linux needs a graphical session with a working Vulkan driver.
 - **Phase 5b:** still optional and not part of the GPUI cutover.
 
@@ -502,7 +515,9 @@ keeps working until the GPUI app reaches feature parity, then the cutover flips 
 - Use **`gpui-kit = "0.10.0"`** as the single UI dependency and import GPUI via `use gpui_kit::*`.
   Do not add a separate `gpui` dependency or a `font-kit` feature; Kit re-exports the pinned GPUI
   snapshot.
-- Raise the MSRV to **1.92**. Pin the GPUI snapshot exactly; a caret update can break Kit.
+- Raise the MSRV to **1.95**. Pin the GPUI snapshot exactly; a caret update can break Kit.
+  The published 1.92 guidance was too low for the locked `gpui-pre*` crates, which use
+  `slice_as_array` and `std::hint::cold_path` before they are stable in 1.92–1.94.
 - Prefer Kit's `syntect` editor highlighting first. `tree-sitter-markdown` may be enabled later for
   folding and syntax-aware editing; all grammars together add tens of megabytes.
 - Use `TextView` for the preview. It supports Markdown, simple HTML, selection, code block actions
@@ -535,9 +550,9 @@ apps/calmmd-tauri/        legacy shell, frozen until cutover
 src/                      existing Solid/CodeMirror UI, frozen until cutover
 ```
 
-The first migration slice extracts `src-tauri/src/core`, `mcp`, `fsops`, `tree`, `search`, `spell`,
-`export`, `kv` and related helpers into `crates/calmmd-core`. Tauri-specific command wrappers and
-window registry code stay in the legacy app until their GPUI replacements exist.
+The first migration slice has been landed: `src-tauri/src/core`, `mcp`, `fsops`, `tree`, `search`,
+`export` and `kv` now live in `crates/calmmd-core`. Tauri-specific command wrappers and OS/browser
+adapters stay in the legacy app until their GPUI replacements exist.
 
 ### 11.3 Decision gates
 
@@ -558,16 +573,16 @@ Cargo feature.
 
 ### 11.4 Phases
 
-#### Phase 8 — Foundation and crate split
+#### Phase 8 — Foundation and crate split — done
 
 - Create a Cargo workspace with `calmmd-core`, `calmmd-gpui` and legacy `calmmd-tauri`.
 - Move UI-independent modules into `calmmd-core`; keep Tauri command wrappers in the legacy app.
-- Add `gpui-kit = "0.10.0"`, raise MSRV to 1.92 and pin the GPUI snapshot.
+- Add `gpui-kit = "0.10.0"`, raise MSRV to 1.95 and pin the GPUI snapshot.
 - Add a minimal GPUI window: `gpui_kit::application().run`, `gpui_kit::init(cx)`, `Root`, theme
   and one `Label`.
 - **Exit:** both binaries build; `cargo test` and the Tauri-hosted MCP smoke are unchanged.
 
-#### Phase 9 — Window and workspace shell
+#### Phase 9 — Window and workspace shell — done
 
 - Implement the GPUI root view and a `Dock` layout with sidebar, tab bar, editor/preview split and
   status bar.
@@ -575,7 +590,7 @@ Cargo feature.
 - Map CalmMD's command registry to GPUI Actions and key contexts; add the command palette.
 - **Exit:** a user can open, close and switch windows and run commands without Tauri menus.
 
-#### Phase 10 — Core service adapters
+#### Phase 10 — Core service adapters — done
 
 - Wrap `WorkspaceRegistry`, `SessionStore`, `History`, `AutosaveService` and buffer services in
   GPUI `Entity` adapters.
@@ -646,7 +661,7 @@ Cargo feature.
 - Replace Tauri bundling with per-platform packaging: `.app`/`.dmg`, Windows installer/ZIP and
   Linux tarball/`.deb`, per GPUI Kit's packaging guide.
 - Add icons, app identity, resource inventories, signing/notarization notes and release tests.
-- Run CI on Rust 1.92 across Windows, macOS and Linux; keep MCP, Markdown, spell, export and GPUI
+- Run CI on Rust 1.95 across Windows, macOS and Linux; keep MCP, Markdown, spell, export and GPUI
   view tests in the matrix.
 - **Exit:** installable GPUI Kit builds are produced and smoke-tested on every target.
 

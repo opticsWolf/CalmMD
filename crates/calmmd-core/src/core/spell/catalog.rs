@@ -7,7 +7,7 @@ use serde::Serialize;
 
 pub const WOOORM: &str = "https://raw.githubusercontent.com/wooorm/dictionaries/main/dictionaries";
 /// Generated dictionaries are downloaded from the repository assets, never compiled into the app.
-pub const GENERATED: &str = "https://raw.githubusercontent.com/opticsWolf/CalmMD/dev_rust/src-tauri/src/core/spell/dictionaries";
+pub const GENERATED: &str = "https://raw.githubusercontent.com/opticsWolf/CalmMD/dev_rust/crates/calmmd-core/src/core/spell/dictionaries";
 
 #[derive(Debug, Clone, Copy)]
 pub struct DictionaryEntry {

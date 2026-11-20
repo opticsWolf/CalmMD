@@ -525,7 +525,7 @@ mod tests {
     use super::*;
     use mordant::highlighter::{highlight_code, theme_background, HighlightingMode};
 
-    const TOKENS_CSS: &str = include_str!("../../../../src/styles/tokens.css");
+    const TOKENS_CSS: &str = include_str!("../../../../../src/styles/tokens.css");
 
     fn css_block(selector: &str) -> &'static str {
         let start = TOKENS_CSS

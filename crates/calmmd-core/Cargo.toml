@@ -1,0 +1,27 @@
+[package]
+name = "calmmd-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CalmMD Rust core services and local MCP server"
+
+[dependencies]
+rmcp = { version = "=3.11.0", features = ["transport-streamable-http-server"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tokio = { version = "1", features = ["net", "rt-multi-thread", "time", "sync", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+schemars = "1.0"
+trash = "5"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+mordant = { version = "0.10.1", features = ["meta", "footnotes", "highlighter", "math"] }
+zspell = { version = "0.5.5", features = ["unstable-suggestions"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+takumi-core = { version = "0.36", features = ["html"] }
+takumi-pdf = "0.20"
+
+[dev-dependencies]
+tempfile = "3"

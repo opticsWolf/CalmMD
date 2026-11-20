@@ -12,11 +12,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:rust": "cargo test --workspace",
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
-    "site": "node scripts/build-site.mjs"
+    "site": "node scripts/build-site.mjs",
+    "app:gpui": "cargo run -p calmmd-gpui"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.4",

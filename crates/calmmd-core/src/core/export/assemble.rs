@@ -280,8 +280,7 @@ pub fn assemble(opts: &AssembleRequest) -> String {
     )
 }
 
-#[tauri::command]
-pub fn core_export_assemble(payload: Value) -> Result<Value, String> {
+pub fn assemble_from_value(payload: Value) -> Result<Value, String> {
     let request: AssembleRequest = serde_json::from_value(payload).map_err(|e| e.to_string())?;
     Ok(json!({ "html": assemble(&request) }))
 }

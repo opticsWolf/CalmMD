@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Manager};
+use crate::app::AppContext;
 use uuid::Uuid;
 
 const MAP: &str = "history/map";
@@ -46,11 +46,11 @@ pub trait HistoryStore: Send + Sync {
 
 #[derive(Clone)]
 pub struct AppHistoryStore {
-    app: AppHandle,
+    app: AppContext,
 }
 
 impl AppHistoryStore {
-    pub fn new(app: AppHandle) -> Self {
+    pub fn new(app: AppContext) -> Self {
         Self { app }
     }
 }
@@ -65,12 +65,7 @@ impl HistoryStore for AppHistoryStore {
     }
 
     fn delete(&self, key: &str) -> Result<(), String> {
-        let dir = self
-            .app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?
-            .join("state");
+        let dir = self.app.state_dir()?;
         let file = dir.join(kv::key_to_file(key)?);
         match std::fs::remove_file(file) {
             Ok(()) => Ok(()),
@@ -80,12 +75,7 @@ impl HistoryStore for AppHistoryStore {
     }
 
     fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
-        let dir = self
-            .app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?
-            .join("state");
+        let dir = self.app.state_dir()?;
         let mut keys: Vec<String> = std::fs::read_dir(dir)
             .map_err(|e| crate::fsops::describe(&e))?
             .filter_map(|entry| entry.ok())
@@ -142,7 +132,7 @@ where
 }
 
 impl History<AppHistoryStore> {
-    pub fn new(app: AppHandle) -> Self {
+    pub fn new(app: AppContext) -> Self {
         Self::with_store(AppHistoryStore::new(app))
     }
 }
@@ -349,54 +339,10 @@ pub struct HistoryUsage {
 
 pub type AppHistory = History<AppHistoryStore>;
 
-fn app_history(app: &AppHandle) -> AppHistory {
+pub fn app_history(app: &AppContext) -> AppHistory {
     History::new(app.clone())
 }
 
-#[tauri::command]
-pub fn core_history_list(app: AppHandle, path: String) -> Result<Vec<Version>, String> {
-    app_history(&app).list(&path)
-}
-
-#[tauri::command]
-pub fn core_history_read(app: AppHandle, path: String, id: String) -> Result<Option<String>, String> {
-    app_history(&app).read(&path, &id)
-}
-
-#[tauri::command]
-pub fn core_history_save(
-    app: AppHandle,
-    path: String,
-    text: String,
-    name: Option<String>,
-) -> Result<Option<Version>, String> {
-    app_history(&app).save(&path, &text, name.as_deref())
-}
-
-#[tauri::command]
-pub fn core_history_remove(app: AppHandle, path: String, id: String) -> Result<(), String> {
-    app_history(&app).remove(&path, &id)
-}
-
-#[tauri::command]
-pub fn core_history_rename(app: AppHandle, from: String, to: String) -> Result<(), String> {
-    app_history(&app).rename(&from, &to)
-}
-
-#[tauri::command]
-pub fn core_history_clear_file(app: AppHandle, path: String) -> Result<(), String> {
-    app_history(&app).clear_file(&path)
-}
-
-#[tauri::command]
-pub fn core_history_clear_all(app: AppHandle) -> Result<(), String> {
-    app_history(&app).clear_all()
-}
-
-#[tauri::command]
-pub fn core_history_usage(app: AppHandle) -> Result<HistoryUsage, String> {
-    app_history(&app).usage()
-}
 
 #[cfg(test)]
 mod tests {

@@ -50,8 +50,9 @@ Dev-only tooling (Vite, Vitest, TypeScript, jsdom, tempfile) is not distributed.
 Phase 7 cleanup changed no runtime dependency: it only narrowed Tauri capabilities to the event,
 menu and window APIs actually used by the webview and removed unused internal Rust helpers.
 
-**Planned but not shipped yet — GPUI Kit migration:** `gpui-kit` 0.10.0 (Apache-2.0, re-exports a
-pinned GPUI snapshot); optional `gpui-webview` (MIT / Apache-2.0 through Wry) for explicit
-browser-only fallbacks. GPUI Kit's documentation prose is CC BY 4.0, so this project summaries it
-rather than copying it into CalmMD docs. Each planned dependency must be added to the shipped table
-above, with its transitive licences reviewed, before the GPUI binary becomes the default.
+**GPUI Kit shell preview (not the default binary yet):** `gpui-kit` 0.10.0 (Apache-2.0, re-exports a
+pinned GPUI snapshot) and `rfd` (MIT / Apache-2.0) for native file dialogs. GPUI Kit's documentation
+prose is CC BY 4.0, so this project summarises it rather than copying it into CalmMD docs. Optional
+`gpui-webview` (MIT / Apache-2.0 through Wry) is still planned for browser-only fallbacks only.
+Each dependency's transitive licences must be reviewed again before the GPUI binary becomes the
+default.

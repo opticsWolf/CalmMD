@@ -321,11 +321,11 @@ pub fn render_pdf(html_content: &str, options: &TakumiPdfOptions) -> Result<Vec<
     pdf.map_err(|e: PdfError| format!("Takumi PDF render failed: {e}"))
 }
 
-/// Tauri command used by the desktop app. The browser build keeps the WASM fallback.
-#[tauri::command]
-pub fn takumi_pdf(html: String, out: String, options: TakumiPdfOptions) -> Result<(), String> {
-    let pdf = render_pdf(&html, &options)?;
-    crate::fsops::write_binary(Path::new(&out), &pdf).map_err(|e| e.to_string())
+/// Renders HTML to a PDF file. Both shells call this directly; the browser build keeps the WASM
+/// fallback.
+pub fn render_pdf_file(html: &str, out: &str, options: &TakumiPdfOptions) -> Result<(), String> {
+    let pdf = render_pdf(html, options)?;
+    crate::fsops::write_binary(Path::new(out), &pdf).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

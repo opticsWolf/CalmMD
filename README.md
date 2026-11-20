@@ -134,7 +134,7 @@ The installers aren't signed with a paid certificate yet, so the first launch sh
 You need [Node.js](https://nodejs.org) 20+ and [Rust](https://rustup.rs) 1.91+ (stable), plus the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. The current release still
 uses Tauri; see [`docs/RUST-CORE-PLAN.md`](docs/RUST-CORE-PLAN.md#11-gpui-kit-shell-migration-active-plan)
-for the active GPUI Kit shell migration, which will raise the Rust requirement to 1.92 at cutover.
+for the active GPUI Kit shell migration, which now requires Rust 1.95 with the pinned GPUI Kit dependency.
 
 ```sh
 npm install
@@ -144,6 +144,15 @@ npm run app:build   # installers in src-tauri/target/release/bundle
 
 `npm run dev` runs the editor in a browser (no Rust needed) against an in-memory file system, which is
 handy for UI work. Add `?demo` to the URL for a showcase document.
+
+The repository also contains an early GPUI Kit shell preview:
+
+```sh
+cargo run -p calmmd-gpui
+```
+
+It shares the Rust core with the Tauri app and is not yet the default binary; see
+[`docs/RUST-CORE-PLAN.md`](docs/RUST-CORE-PLAN.md#11-gpui-kit-shell-migration-active-plan).
 
 ## Privacy
 
