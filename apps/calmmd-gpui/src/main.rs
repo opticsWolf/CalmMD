@@ -1,6 +1,8 @@
 mod editor;
 mod platform;
 mod preview;
+mod diagrams;
+mod locale;
 mod services;
 mod single_instance;
 mod state;

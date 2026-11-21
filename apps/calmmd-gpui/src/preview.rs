@@ -4,6 +4,9 @@
 //! DOMPurify is not part of this path. CalmMD-specific syntax is handled with
 //! native plugins instead of injected HTML/JavaScript.
 
+mod diagram_render;
+
+use crate::locale::tr;
 use crate::{platform::Platform, state::WorkspaceState};
 use gpui_kit::{
     component::{
@@ -150,17 +153,17 @@ impl MarkdownPlugin for MermaidPlugin {
         }
     }
 
-    fn render(&self, node: &MarkdownNode, _window: &mut Window, _cx: &mut gpui_kit::App) -> impl IntoElement {
+    fn render(&self, node: &MarkdownNode, _window: &mut Window, cx: &mut gpui_kit::App) -> impl IntoElement {
         let source = node.data::<String>().cloned().unwrap_or_default();
-        gpui_kit::div()
-            .v_flex()
-            .gap(px(4.0))
-            .p(px(10.0))
-            .rounded_md()
-            .border_1()
-            .border_color(gpui_kit::rgb(0x2459b3))
-            .child(Label::new("Mermaid diagram · native source view"))
-            .child(Label::new(source))
+        let id = gpui_kit::SharedString::from(format!("mermaid-preview:{:?}", node.source_range()));
+        if let Some(graph) = crate::diagrams::Graph::parse(&source) {
+            if let Some(rendered) = diagram_render::render(&graph, id, cx) {
+                return rendered;
+            }
+        }
+        gpui_kit::div().v_flex().gap_1().p_2()
+            .child(Label::new(tr(cx, "Mermaid source for this diagram")))
+            .child(Label::new(source)).into_any_element()
     }
 }
 
@@ -184,14 +187,14 @@ impl MarkdownPlugin for EmbedPlugin {
         )
     }
 
-    fn render(&self, node: &MarkdownNode, _window: &mut Window, _cx: &mut gpui_kit::App) -> impl IntoElement {
+    fn render(&self, node: &MarkdownNode, _window: &mut Window, cx: &mut gpui_kit::App) -> impl IntoElement {
         let (url, label) = node
             .data::<(String, String)>()
             .cloned()
             .unwrap_or_else(|| (String::new(), "Video".into()));
         let platform = self.platform.clone();
         Button::new(SharedString::from(format!("embed:{url}")))
-            .label(format!("▶ {label} · opens externally"))
+            .label(format!("▶ {label} · {}", tr(cx, "opens externally")))
             .on_click(move |_, _, cx| platform.open_url(&embed_page_url(&url), cx))
     }
 }
@@ -217,13 +220,13 @@ impl MarkdownPlugin for PageBreakPlugin {
         Some(MarkdownNode::new(self.name(), ()).text("Page break"))
     }
 
-    fn render(&self, _node: &MarkdownNode, _window: &mut Window, _cx: &mut gpui_kit::App) -> impl IntoElement {
+    fn render(&self, _node: &MarkdownNode, _window: &mut Window, cx: &mut gpui_kit::App) -> impl IntoElement {
         gpui_kit::div()
             .h_flex()
             .items_center()
             .gap(px(6.0))
             .child(gpui_kit::div().h(px(1.0)).flex_1().bg(gpui_kit::rgb(0x8c909a)))
-            .child(Label::new("page break"))
+            .child(Label::new(tr(cx, "page break")))
             .child(gpui_kit::div().h(px(1.0)).flex_1().bg(gpui_kit::rgb(0x8c909a)))
     }
 }
@@ -315,7 +318,7 @@ pub fn extensions(
         .plugin(WikiLinkPlugin { state });
 
     for name in ["note", "tip", "important", "warning", "caution"] {
-        extensions = extensions.block_surface(name, move |_window, _cx| {
+        extensions = extensions.block_surface(name, move |_window, cx| {
             let color: gpui_kit::Hsla = match name {
                 "tip" => gpui_kit::rgb(0x2f8a4a).into(),
                 "important" => gpui_kit::rgb(0x7c4dcc).into(),
@@ -330,7 +333,7 @@ pub fn extensions(
                 .border_l_2()
                 .border_color(color)
                 .bg(gpui_kit::rgb(0xf5f6f8))
-                .child(Label::new(name.to_uppercase()))
+                .child(Label::new(tr(cx, &name.to_uppercase()).to_owned()))
         });
     }
     extensions
@@ -342,7 +345,16 @@ pub fn view(
     state: Entity<WorkspaceState>,
     platform: Arc<dyn Platform>,
 ) -> TextView {
-    TextView::markdown("calmmd-preview", text.to_owned())
+    view_with_id("calmmd-preview", text, state, platform)
+}
+
+pub fn view_with_id(
+    id: impl Into<gpui_kit::ElementId>,
+    text: &str,
+    state: Entity<WorkspaceState>,
+    platform: Arc<dyn Platform>,
+) -> TextView {
+    TextView::markdown(id, text.to_owned())
         .markdown_extensions(extensions(state, platform))
         .selectable(true)
 }

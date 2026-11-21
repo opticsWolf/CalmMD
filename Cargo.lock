@@ -1071,6 +1071,7 @@ dependencies = [
  "calmmd-core",
  "fs2",
  "gpui-kit",
+ "markdown",
  "rfd 0.15.4",
  "serde_json",
  "tempfile",

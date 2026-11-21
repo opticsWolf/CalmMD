@@ -1,12 +1,15 @@
 //! Capability seams for GPUI. UI views never call platform APIs directly.
 
-use gpui_kit::{App, ClipboardItem};
-use std::path::{Path, PathBuf};
+use crate::locale::translate;
+use gpui_kit::{App, ClipboardItem, Window};
+use std::{future::Future, path::{Path, PathBuf}, pin::Pin};
+
+type FolderPicker = Pin<Box<dyn Future<Output = Option<PathBuf>>>>;
 
 /// Desktop capabilities the shell needs. Each method has a tiny, testable surface.
 #[allow(dead_code)]
 pub trait Platform: Send + Sync {
-    fn open_folder(&self) -> Option<PathBuf>;
+    fn open_folder(&self, parent: &Window, current: Option<&Path>) -> FolderPicker;
     fn open_file(&self) -> Option<PathBuf>;
     fn open_image(&self) -> Option<PathBuf> { None }
     fn save_file(&self, default_name: &str) -> Option<PathBuf>;
@@ -20,22 +23,31 @@ pub trait Platform: Send + Sync {
 pub struct NativePlatform;
 
 impl Platform for NativePlatform {
-    fn open_folder(&self) -> Option<PathBuf> {
-        rfd::FileDialog::new().pick_folder()
+    fn open_folder(&self, parent: &Window, current: Option<&Path>) -> FolderPicker {
+        let mut dialog = rfd::AsyncFileDialog::new()
+            .set_parent(parent)
+            .set_title(translate("Select a folder"));
+        if let Some(current) = current {
+            dialog = dialog.set_directory(current);
+        }
+        let picked = dialog.pick_folder();
+        Box::pin(async move { picked.await.map(|folder| folder.path().to_path_buf()) })
     }
 
     fn open_file(&self) -> Option<PathBuf> {
-        rfd::FileDialog::new().add_filter("Markdown", &["md", "markdown", "mdown", "mkd", "mdx", "txt"]).pick_file()
+        rfd::FileDialog::new().set_title(translate("Open a document")).add_filter("Markdown", &["md", "markdown", "mdown", "mkd", "mdx", "txt"]).pick_file()
     }
 
     fn open_image(&self) -> Option<PathBuf> {
         rfd::FileDialog::new()
-            .add_filter("Image", &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"])
+            .set_title(translate("Select an image"))
+            .add_filter(translate("Image"), &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"])
             .pick_file()
     }
 
     fn save_file(&self, default_name: &str) -> Option<PathBuf> {
         rfd::FileDialog::new()
+            .set_title(translate("Save file"))
             .set_file_name(default_name)
             .save_file()
     }
@@ -92,8 +104,8 @@ pub fn safe_external_url(url: &str) -> bool {
 pub struct MemoryPlatform;
 
 impl Platform for MemoryPlatform {
-    fn open_folder(&self) -> Option<PathBuf> {
-        None
+    fn open_folder(&self, _parent: &Window, _current: Option<&Path>) -> FolderPicker {
+        Box::pin(async { None })
     }
 
     fn open_file(&self) -> Option<PathBuf> { None }

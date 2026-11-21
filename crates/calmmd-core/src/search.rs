@@ -13,8 +13,8 @@ const MAX_LINE: usize = 240;
 
 #[derive(Serialize, Debug, PartialEq)]
 pub struct SearchHit {
-    path: String,
-    line: usize,
+    pub(crate) path: String,
+    pub(crate) line: usize,
     text: String,
 }
 

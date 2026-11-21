@@ -1,14 +1,16 @@
+use crate::locale::tr;
 use gpui_kit::{
+    App, Focusable as _, SharedString, Window,
     component::{
+        WindowExt as _,
         button::Button,
         dialog::{Cancel, Confirm},
         input::{Input, InputState},
         label::Label,
-        WindowExt as _,
     },
     div,
     prelude::*,
-    px, App, Focusable as _, SharedString, Window,
+    px,
 };
 
 /// A text prompt with inline validation. Cancel leaves the document unchanged.
@@ -35,13 +37,13 @@ pub fn text_prompt(
             .flex()
             .flex_col()
             .gap_2()
-            .child(Label::new(label))
+            .child(Label::new(tr(cx, label)))
             .child(Input::new(&input));
         if let Some(message) = error.read(cx) {
-            content = content.child(Label::new(message.clone()));
+            content = content.child(Label::new(crate::locale::message(cx, message)));
         }
         dialog
-            .title(title)
+            .title(tr(cx, title))
             .child(content)
             .on_ok(move |_, window, cx| {
                 let value: SharedString = input_for_submit.read(cx).value();
@@ -64,12 +66,12 @@ pub fn text_prompt(
                     .gap(px(8.))
                     .child(
                         Button::new("cancel")
-                            .label("Cancel")
+                            .label(tr(cx, "Cancel"))
                             .on_click(|_, window, cx| window.dispatch_action(Box::new(Cancel), cx)),
                     )
                     .child(
                         Button::new("confirm")
-                            .label("OK")
+                            .label(tr(cx, "OK"))
                             .on_click(|_, window, cx| {
                                 window.dispatch_action(Box::new(Confirm { secondary: false }), cx)
                             }),

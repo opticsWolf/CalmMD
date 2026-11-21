@@ -23,6 +23,41 @@ pub(super) fn register(cx: &mut App, windows: &WindowList) {
     window_command::<CommandPalette>(cx, windows, command_palette);
     window_command::<FilePalette>(cx, windows, file_palette);
     window_command::<HeadingPalette>(cx, windows, heading_palette);
+    window_command::<NewTab>(cx, windows, new_tab);
+    let language_windows = windows.clone();
+    window_command::<InterfaceLanguage>(cx, windows, interface_language);
+    cx.on_action(move |action: &SetInterfaceLanguage, cx| {
+        let entries = language_windows
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|entry| (entry.handle, entry.view.clone()))
+            .collect::<Vec<_>>();
+        let Some((_, view)) = entries.first() else {
+            return;
+        };
+        let state = view.read(cx).state.clone();
+        if let Err(error) =
+            calmmd_core::kv::write(state.read(cx).context(), crate::locale::KEY, action.0)
+        {
+            state.update(cx, |state, cx| state.set_message(error, cx));
+            return;
+        }
+        gpui_kit::component::set_locale(action.0);
+        refresh_menus(&language_windows, cx);
+        for (handle, view) in entries {
+            view.update(cx, |_, cx| cx.notify());
+            let search = view.read(cx).sidebar.read(cx).search.clone();
+            after_window_action(cx, handle, move |window, cx| {
+                let placeholder = tr(cx, "Search notes");
+                search.update(cx, |search, cx| {
+                    search.set_placeholder(placeholder, window, cx)
+                });
+            });
+        }
+        cx.refresh_windows();
+    });
     window_command::<Appearance>(cx, windows, appearance);
     window_command::<CustomizeToolbar>(cx, windows, toolbar::customize);
     window_command::<ImageFile>(cx, windows, image_file);
@@ -214,6 +249,8 @@ fn zoom(view: Entity<AppView>, cx: &mut App, change: fn(f32) -> f32) {
             panel.zoom = zoom;
             cx.notify();
         });
+        view.document_view
+            .update(cx, |document, cx| document.set_zoom(zoom, cx));
         cx.notify();
     });
 }
@@ -251,10 +288,16 @@ pub(super) fn jump_in_window(window: &mut Window, cx: &mut App, line: usize) {
 }
 
 fn jump_to_line(view: &Entity<AppView>, handle: AnyWindowHandle, line: usize, cx: &mut App) {
+    if view.read(cx).view_mode == ViewMode::Preview {
+        let document = view.read(cx).document_view.clone();
+        after_window_action(cx, handle, move |window, cx| {
+            document.update(cx, |document, cx| document.edit_line(line, window, cx));
+        });
+        return;
+    }
     let editor = view.update(cx, |view, cx| {
-        if view.view_mode == ViewMode::Preview {
-            view.view_mode = ViewMode::Split;
-            cx.notify();
+        if view.view_mode == ViewMode::Live {
+            view.set_mode(ViewMode::Split, cx);
         }
         view.editor.clone()
     });
@@ -320,6 +363,51 @@ fn heading_palette(view: Entity<AppView>, window: &mut Window, cx: &mut App) {
     choices(window, cx, "Go to Heading", entries);
 }
 
+fn new_tab(view: Entity<AppView>, window: &mut Window, cx: &mut App) {
+    let state = view.read(cx).state.clone();
+    let create_state = state.clone();
+    let mut entries: Vec<Choice> = vec![(
+        "New Document".into(),
+        Rc::new(move |_, cx| {
+            create_state.update(cx, |state, cx| state.create_untitled_in_tab(true, cx));
+        }),
+    )];
+    for document in state.read(cx).documents() {
+        let path = document.path.clone();
+        let root = state.read(cx).root().map(Path::new);
+        let label = root
+            .and_then(|root| Path::new(&path).strip_prefix(root).ok())
+            .unwrap_or_else(|| Path::new(&path))
+            .display()
+            .to_string();
+        let state = state.clone();
+        entries.push((
+            label,
+            Rc::new(move |_, cx| {
+                state.update(cx, |state, cx| state.open_in_new_tab(&path, cx));
+            }),
+        ));
+    }
+    choices(window, cx, "New Tab", entries);
+}
+
+#[derive(Clone, PartialEq, Action)]
+#[action(namespace = calmmd, no_json)]
+struct SetInterfaceLanguage(&'static str);
+
+fn interface_language(_: Entity<AppView>, window: &mut Window, cx: &mut App) {
+    let entries = [("English", "en"), ("Deutsch", "de")]
+        .into_iter()
+        .map(|(label, code)| {
+            let run: ChoiceAction = Rc::new(move |window, cx| {
+                window.dispatch_action(Box::new(SetInterfaceLanguage(code)), cx)
+            });
+            (label.to_owned(), run)
+        })
+        .collect();
+    choices(window, cx, "Interface Language", entries);
+}
+
 fn appearance(_: Entity<AppView>, window: &mut Window, cx: &mut App) {
     let entries: Vec<Choice> = vec![
         ("Light".into(), Rc::new(|_, cx| theme::set(cx, false))),
@@ -341,14 +429,14 @@ fn appearance(_: Entity<AppView>, window: &mut Window, cx: &mut App) {
 }
 
 fn help(window: &mut Window, cx: &mut App, title: &'static str, lines: &'static [&'static str]) {
-    window.open_dialog(cx, move |dialog, _, _| {
+    window.open_dialog(cx, move |dialog, _, cx| {
         let content = div()
             .v_flex()
             .gap_2()
-            .children(lines.iter().map(|line| Label::new(*line)));
-        dialog.title(title).child(content).footer(
+            .children(lines.iter().map(|line| Label::new(tr(cx, line))));
+        dialog.title(tr(cx, title)).child(content).footer(
             Button::new("close-help")
-                .label("Close")
+                .label(tr(cx, "Close"))
                 .on_click(|_, window, cx| window.close_dialog(cx)),
         )
     });
@@ -358,7 +446,7 @@ type ChoiceAction = Rc<dyn Fn(&mut Window, &mut App)>;
 type Choice = (String, ChoiceAction);
 
 fn choices(window: &mut Window, cx: &mut App, title: &'static str, entries: Vec<Choice>) {
-    let filter = cx.new(|cx| InputState::new(window, cx).placeholder("Filter"));
+    let filter = cx.new(|cx| InputState::new(window, cx).placeholder(tr(cx, "Filter")));
     let handle = window.window_handle();
     let subscription = cx.subscribe(
         &filter,
@@ -375,10 +463,11 @@ fn choices(window: &mut Window, cx: &mut App, title: &'static str, entries: Vec<
             filter.read(cx).focus_handle(cx).focus(window, cx);
         }
         let query = filter.read(cx).value().to_lowercase();
-        let matching = entries
-            .iter()
-            .enumerate()
-            .filter(|(_, (label, _))| label.to_lowercase().contains(&query));
+        let matching = entries.iter().enumerate().filter(|(_, (label, _))| {
+            crate::locale::message(cx, label)
+                .to_lowercase()
+                .contains(&query)
+        });
         let empty = matching.clone().next().is_none();
         let rows = div()
             .id("choice-rows")
@@ -389,15 +478,15 @@ fn choices(window: &mut Window, cx: &mut App, title: &'static str, entries: Vec<
             .children(matching.map(|(index, (label, run))| {
                 let run = run.clone();
                 Button::new(("choice", index))
-                    .label(label.clone())
+                    .label(crate::locale::message(cx, label))
                     .on_click(move |_, window, cx| {
                         window.close_dialog(cx);
                         let run = run.clone();
                         window.defer(cx, move |window, cx| run(window, cx));
                     })
             }))
-            .when(empty, |rows| rows.child(Label::new("No matches")));
-        dialog.title(title).child(
+            .when(empty, |rows| rows.child(Label::new(tr(cx, "No matches"))));
+        dialog.title(tr(cx, title)).child(
             div()
                 .v_flex()
                 .gap_2()
@@ -409,7 +498,7 @@ fn choices(window: &mut Window, cx: &mut App, title: &'static str, entries: Vec<
 
 fn command_palette(_: Entity<AppView>, window: &mut Window, cx: &mut App) {
     let mut entries = Vec::new();
-    for menu in app_menus() {
+    for menu in localized_menus(cx) {
         collect_menu_commands(menu, &mut entries);
     }
     choices(window, cx, "Command Palette", entries);
@@ -565,7 +654,7 @@ pub(super) fn export_options(view: Entity<AppView>, window: &mut Window, cx: &mu
     let prefs = Rc::new(std::cell::RefCell::new(
         calmmd_core::core::export::prefs::resolve_prefs(None),
     ));
-    let author = cx.new(|cx| InputState::new(window, cx).placeholder("Cover author"));
+    let author = cx.new(|cx| InputState::new(window, cx).placeholder(tr(cx, "Cover author")));
     let pdf_options = [
         ExportOption {
             section: "pdf",
@@ -624,23 +713,23 @@ pub(super) fn export_options(view: Entity<AppView>, window: &mut Window, cx: &mu
             values: &[],
         },
     ];
-    window.open_dialog(cx, move |dialog, _, _| {
+    window.open_dialog(cx, move |dialog, _, cx| {
         let mut content = div().v_flex().gap_2();
         let options = pdf_options.iter().filter(|_| pdf).chain(common_options.iter().filter(|option| !pdf || option.key != "embedImages"));
         for &option in options {
             let value = if option.section.is_empty() { prefs.borrow()[option.key].clone() }
                 else { prefs.borrow()[option.section][option.key].clone() };
-            let mut row = div().h_flex().flex_wrap().justify_between().gap_1().child(Label::new(option.label));
+            let mut row = div().h_flex().flex_wrap().justify_between().gap_1().child(Label::new(tr(cx, option.label)));
             if option.values.is_empty() {
                 let prefs = prefs.clone();
                 row = div().h_flex().child(gpui_kit::component::checkbox::Checkbox::new(option.key)
-                    .label(option.label).checked(value.as_bool().unwrap_or(false))
+                    .label(tr(cx, option.label)).checked(value.as_bool().unwrap_or(false))
                     .on_click(move |checked, window, _| set_export_option(&prefs, option, Value::Bool(*checked), window)));
             } else {
                 let mut selections = div().h_flex().gap_1();
                 for (index, &candidate) in option.values.iter().enumerate() {
                     let prefs = prefs.clone();
-                    selections = selections.child(Button::new((option.key, index)).label(candidate).compact()
+                    selections = selections.child(Button::new((option.key, index)).label(tr(cx, candidate)).compact()
                         .when(value.as_str() == Some(candidate), |button| button.primary())
                         .on_click(move |_, window, _| set_export_option(&prefs, option, Value::from(candidate), window)));
                 }
@@ -656,10 +745,10 @@ pub(super) fn export_options(view: Entity<AppView>, window: &mut Window, cx: &mu
         let state = state.clone();
         let view = view.clone();
         let author = author.clone();
-        dialog.title(if pdf { "Export PDF" } else { "Export HTML" }).child(content)
+        dialog.title(tr(cx, if pdf { "Export PDF" } else { "Export HTML" })).child(content)
             .footer(div().h_flex().justify_end().gap_2()
-                .child(Button::new("cancel-export").label("Cancel").on_click(|_, window, cx| window.close_dialog(cx)))
-                .child(Button::new("confirm-export").label("Export...").primary().on_click(move |_, window, cx| {
+                .child(Button::new("cancel-export").label(tr(cx, "Cancel")).on_click(|_, window, cx| window.close_dialog(cx)))
+                .child(Button::new("confirm-export").label(tr(cx, "Export...")).primary().on_click(move |_, window, cx| {
                     if state.read(cx).active() != Some(path.as_str()) {
                         state.update(cx, |state, cx| state.set_message("The active document changed. Reopen Export to try again.".into(), cx));
                         window.close_dialog(cx);
@@ -729,8 +818,11 @@ fn image_file(view: Entity<AppView>, window: &mut Window, cx: &mut App) {
         .images_in_root
         .then(|| state.read(cx).root().map(str::to_owned))
         .flatten();
-    let input = app.editor.read(cx).editor.input.clone();
     let platform = app.platform.clone();
+    let Some(input) = input_for_edit(&view, window, cx) else {
+        return;
+    };
+    let source_before = state.read(cx).text().to_owned();
     let original = input.read(cx).value();
     let selection = input.read(cx).selected_range();
     let handle = window.window_handle();
@@ -753,6 +845,8 @@ fn image_file(view: Entity<AppView>, window: &mut Window, cx: &mut App) {
             Ok(link) => after_window_action(cx, handle, move |window, cx| {
                 if state.read(cx).active() != Some(path.as_str())
                     || input.read(cx).value() != original
+                    || state.read(cx).text() != source_before
+                    || input_for_edit(&view, window, cx).as_ref() != Some(&input)
                 {
                     state.update(cx, |state, cx| {
                         state.set_message(
@@ -771,6 +865,7 @@ fn image_file(view: Entity<AppView>, window: &mut Window, cx: &mut App) {
                     editor.set_selected_range(selection, cx);
                     editor.replace(format!("![{alt}](<{link}>)"), window, cx);
                 });
+                sync_edit(&view, &input, window, cx);
             }),
             Err(error) => state.update(cx, |state, cx| state.set_message(error, cx)),
         });

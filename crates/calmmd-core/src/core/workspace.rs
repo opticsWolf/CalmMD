@@ -27,11 +27,16 @@ const DEFAULT_WINDOW: &str = "main";
 #[derive(Debug, Clone, Default)]
 struct Workspace {
     root: Option<String>,
+    extra_roots: Vec<String>,
     docs: HashMap<String, WorkspaceDocumentDto>,
     active: Option<String>,
 }
 
 impl Workspace {
+    fn roots(&self) -> impl Iterator<Item = &String> {
+        self.root.iter().chain(&self.extra_roots)
+    }
+
     fn document(&self, path: &str) -> Option<&WorkspaceDocumentDto> {
         self.docs.get(&path_key(path))
     }
@@ -48,6 +53,9 @@ impl Workspace {
             }
             self.docs.insert(path_key(&doc.path), doc);
         }
+        for root in self.root.iter_mut().chain(&mut self.extra_roots) {
+            if is_within(root, from) { *root = rebase(root, from, to); }
+        }
         if let Some(active) = &self.active {
             if is_within(active, from) {
                 self.active = Some(rebase(active, from, to));
@@ -57,6 +65,10 @@ impl Workspace {
 
     fn close_within(&mut self, path: &str) {
         self.docs.retain(|_, doc| !is_within(&doc.path, path));
+        self.extra_roots.retain(|root| !is_within(root, path));
+        if self.root.as_ref().is_some_and(|root| is_within(root, path)) {
+            self.root = if self.extra_roots.is_empty() { None } else { Some(self.extra_roots.remove(0)) };
+        }
         if self.active.as_ref().is_some_and(|active| is_within(active, path)) {
             self.active = None;
         }
@@ -105,6 +117,7 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         let mut all = self.write_lock()?;
         let state = all.entry(window.to_owned()).or_default();
         state.root = snapshot.root;
+        state.extra_roots.clear();
         state.docs = snapshot
             .documents
             .into_iter()
@@ -112,6 +125,25 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             .collect();
         state.active = snapshot.active_document;
         Ok(())
+    }
+
+    pub fn set_roots(&self, window: &str, roots: Vec<String>) -> Result<(), String> {
+        let mut all = self.write_lock()?;
+        let state = all.entry(window.to_owned()).or_default();
+        let contains = |path: &str| roots.iter().any(|root| is_within(path, root));
+        state.docs.retain(|_, doc| contains(&doc.path));
+        if state.active.as_deref().is_some_and(|path| !contains(path)) { state.active = None; }
+        let mut roots = roots.into_iter();
+        state.root = roots.next();
+        state.extra_roots = roots.collect();
+        Ok(())
+    }
+
+    fn roots_of(&self, window: &str) -> Result<Vec<String>, String> {
+        let all = self.workspace(window)?;
+        let roots: Vec<String> = all.get(window).into_iter().flat_map(Workspace::roots).cloned().collect();
+        if roots.is_empty() { return Err("Open a folder in CalmMD first".into()); }
+        Ok(roots)
     }
 
     pub fn upsert_document(&self, window: &str, document: WorkspaceDocumentDto, active: Option<String>) -> Result<(), String> {
@@ -157,7 +189,7 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
     }
 
     pub(crate) fn resolve(&self, window: &str, raw: &str) -> Result<String, String> {
-        let root = self.root_of(window)?;
+        let roots = self.roots_of(window)?;
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return Err("Missing path".into());
@@ -168,18 +200,18 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         let path = if absolute {
             trimmed.to_owned()
         } else {
-            join_path(&root, trimmed)
+            join_path(&roots[0], trimmed)
         };
         let normalised = path.replace('\\', "/");
         if normalised.split('/').any(|segment| segment == "..") {
             return Err("Paths may not contain \"..\"".into());
         }
-        if !is_within(&path, &root) {
+        let candidates: Vec<_> = roots.iter().filter(|root| is_within(&path, root)).collect();
+        if candidates.is_empty() {
             return Err("That path is outside the open folder".into());
         }
         // Canonicalize the nearest existing ancestor too, so a new file beneath a link
         // cannot escape the workspace. Broken links are rejected rather than skipped.
-        let canonical_root = fs::canonicalize(&root).map_err(|e| fsops::describe(&e))?;
         let mut existing = Path::new(&path);
         loop {
             match fs::symlink_metadata(existing) {
@@ -191,7 +223,7 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             }
         }
         let canonical = fs::canonicalize(existing).map_err(|e| fsops::describe(&e))?;
-        if !canonical.starts_with(&canonical_root) {
+        if !candidates.iter().any(|root| fs::canonicalize(root).is_ok_and(|root| canonical.starts_with(root))) {
             return Err("That path is outside the open folder".into());
         }
         Ok(path)
@@ -242,6 +274,7 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             "windowLabel": label,
             "windows": if window_labels.is_empty() { windows } else { json!(window_labels) },
             "root": root,
+            "roots": state.into_iter().flat_map(Workspace::roots).collect::<Vec<_>>(),
             "openDocuments": open_documents,
             "activeDocument": active,
         }))
@@ -287,12 +320,24 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
     }
 
     pub fn list_documents(&self, window: &str, markdown_only: bool, folder: Option<&str>) -> Result<Value, String> {
-        let root = self.root_of(window)?;
-        let folder = match folder {
-            Some(folder) => Some(self.resolve(window, folder)?),
-            None => None,
+        let roots = self.roots_of(window)?;
+        let folder = folder.map(|folder| self.resolve(window, folder)).transpose()?;
+        let files = if let Some(folder) = &folder {
+            let root = roots.iter().filter(|root| is_within(folder, root)).max_by_key(|root| root.len())
+                .ok_or("That folder is outside the open folder")?;
+            self.collect_files(root, Some(folder), markdown_only)?
+        } else {
+            let mut seen = std::collections::HashSet::new();
+            let mut files = Vec::new();
+            for root in roots {
+                for file in self.collect_files(&root, None, markdown_only)? {
+                    if seen.insert(path_key(&file)) { files.push(file); }
+                }
+                if files.len() >= MAX_FILES { break; }
+            }
+            files.truncate(MAX_FILES);
+            files
         };
-        let files = self.collect_files(&root, folder.as_deref(), markdown_only)?;
         let all = self.read_lock()?;
         let open = all
             .get(window)
@@ -336,16 +381,19 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
     }
 
     pub fn search(&self, window: &str, query: &str, case_sensitive: bool, whole_word: bool) -> Result<Value, String> {
-        let root = self.root_of(window)?;
-        serde_json::to_value(crate::search::search(Path::new(&root), query, case_sensitive, whole_word))
-            .map_err(|e| e.to_string())
+        let mut seen = std::collections::HashSet::new();
+        let mut results = Vec::new();
+        for root in self.roots_of(window)? {
+            let hits = crate::search::search(Path::new(&root), query, case_sensitive, whole_word);
+            results.extend(hits.into_iter().filter(|hit| seen.insert((path_key(&hit.path), hit.line))));
+            if results.len() >= 500 { break; }
+        }
+        results.truncate(500);
+        serde_json::to_value(results).map_err(|error| error.to_string())
     }
 
     fn ensure_folder(&self, window: &str, folder: &str) -> Result<(), String> {
-        let root = self.root_of(window)?;
-        if !is_within(folder, &root) {
-            return Err("That path is outside the open folder".into());
-        }
+        self.resolve(window, folder)?;
         fs::create_dir_all(folder).map_err(|e| fsops::describe(&e))
     }
 
@@ -355,9 +403,6 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             Some(folder) => self.resolve(window, folder)?,
             None => root.clone(),
         };
-        if !is_within(&parent, &root) {
-            return Err("That path is outside the open folder".into());
-        }
         let name = with_markdown_ext(name);
         validate_name(&name)?;
         let path = join_path(&parent, &name);
@@ -379,9 +424,6 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             Some(folder) => self.resolve(window, folder)?,
             None => root.clone(),
         };
-        if !is_within(&parent, &root) {
-            return Err("That path is outside the open folder".into());
-        }
         let name = validate_name(name)?;
         let path = join_path(&parent, &name);
         fs::create_dir(&path).map_err(|e| {
@@ -543,8 +585,8 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
         }
         drop(all);
 
-        let root = self.root_of(window)?;
-        let files = self.collect_files(&root, None, true)?;
+        let files: Vec<String> = self.list_documents(window, true, None)?.as_array().into_iter().flatten()
+            .filter_map(|entry| entry["path"].as_str().map(str::to_owned)).collect();
         let mut events = vec![WorkspaceEventDto::renamed(from.to_owned(), to.to_owned())];
         for path in &files {
             let path = path.clone();
@@ -638,6 +680,8 @@ impl<S: crate::core::history::HistoryStore> WorkspaceStore<S> {
             Some(folder) => self.resolve(window, folder)?,
             None => root.clone(),
         };
+        let root = self.roots_of(window)?.into_iter().filter(|root| is_within(&folder, root)).max_by_key(String::len)
+            .ok_or("That folder is outside the open folder")?;
         let entries: Vec<_> = tree::list(Path::new(&folder), false).map_err(|e| fsops::describe(&e))?
             .into_iter().filter(|entry| self.resolve_path_for_listing(&root, &entry.path).is_ok()).collect();
         let files: Vec<_> = entries.iter().filter(|entry| !entry.is_dir && is_markdown_path(&entry.name)).take(limit).collect();
@@ -795,6 +839,10 @@ impl WorkspaceRegistry {
 
     pub fn sync(&self, window: &str, snapshot: WorkspaceSnapshotDto) -> Result<(), String> {
         self.store.sync(window, snapshot)
+    }
+
+    pub fn set_roots(&self, window: &str, roots: Vec<String>) -> Result<(), String> {
+        self.store.set_roots(window, roots)
     }
 
     pub fn upsert_document(&self, window: &str, document: WorkspaceDocumentDto, active: Option<String>) -> Result<(), String> {
@@ -1033,6 +1081,33 @@ mod tests {
         assert_eq!(status["root"], Value::Null);
         assert_eq!(status["windows"], json!([]));
         assert_eq!(status["openDocuments"], json!([]));
+    }
+
+    #[test]
+    fn multiple_roots_allow_secondary_notes_and_revoke_access_when_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first");
+        let second = dir.path().join("second");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        let roots = vec![first.to_string_lossy().into_owned(), second.to_string_lossy().into_owned()];
+        let first_note = join_path(&roots[0], "first.md");
+        let second_note = join_path(&roots[1], "second.md");
+        let unrelated = dir.path().join("outside.md");
+        fs::write(&first_note, "primary").unwrap();
+        fs::write(&second_note, "secondary").unwrap();
+        fs::write(&unrelated, "outside").unwrap();
+        let store = store();
+        store.set_roots("main", roots.clone()).unwrap();
+        assert_eq!(store.read_document("main", &second_note).unwrap()["text"], "secondary");
+        assert_eq!(store.list_documents("main", true, None).unwrap().as_array().unwrap().len(), 2);
+        assert!(store.resolve("main", &unrelated.to_string_lossy()).is_err());
+        assert!(store.resolve("main", "../outside.md").is_err());
+        store.create_document("main", Some(&roots[1]), "created", None).unwrap();
+        assert!(second.join("created.md").exists());
+        store.set_roots("main", vec![roots[0].clone()]).unwrap();
+        assert!(store.read_document("main", &second_note).is_err());
+        assert!(store.read_document("main", &first_note).is_ok());
     }
 
     #[test]

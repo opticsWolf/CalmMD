@@ -95,7 +95,7 @@ pub(super) fn load(state: &WorkspaceState) -> Vec<String> {
     items
 }
 
-pub(super) fn render(items: &[String], border: Hsla) -> impl IntoElement {
+pub(super) fn render(items: &[String], border: Hsla, cx: &App) -> impl IntoElement {
     let mut row = div()
         .id("format-toolbar")
         .h_flex()
@@ -122,8 +122,8 @@ pub(super) fn render(items: &[String], border: Hsla) -> impl IntoElement {
             row = row.child(
                 Button::new(tool.id)
                     .icon(tool.icon)
-                    .accessibility_label(tool.label)
-                    .tooltip(tool.label)
+                    .accessibility_label(tr(cx, tool.label))
+                    .tooltip(tr(cx, tool.label))
                     .ghost()
                     .compact()
                     .flex_shrink_0()
@@ -134,8 +134,8 @@ pub(super) fn render(items: &[String], border: Hsla) -> impl IntoElement {
     row.child(
         Button::new("customize-toolbar")
             .icon(IconName::Ellipsis)
-            .accessibility_label("Customize Toolbar")
-            .tooltip("Customize Toolbar")
+            .accessibility_label(tr(cx, "Customize Toolbar"))
+            .tooltip(tr(cx, "Customize Toolbar"))
             .ghost()
             .compact()
             .flex_shrink_0()
@@ -145,7 +145,7 @@ pub(super) fn render(items: &[String], border: Hsla) -> impl IntoElement {
 
 pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App) {
     let items = Rc::new(RefCell::new(view.read(cx).toolbar_items.clone()));
-    window.open_dialog(cx, move |dialog, _, _| {
+    window.open_dialog(cx, move |dialog, _, cx| {
         let mut ordered = div()
             .id("toolbar-order")
             .v_flex()
@@ -162,10 +162,10 @@ pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App
                     .h_flex()
                     .gap_1()
                     .items_center()
-                    .child(div().flex_1().child(Label::new(title)))
+                    .child(div().flex_1().child(Label::new(tr(cx, title))))
                     .child(
                         Button::new(("toolbar-up", index))
-                            .label("Up")
+                            .label(tr(cx, "Up"))
                             .compact()
                             .on_click(move |_, window, _| {
                                 if index > 0 {
@@ -176,7 +176,7 @@ pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App
                     )
                     .child(
                         Button::new(("toolbar-down", index))
-                            .label("Down")
+                            .label(tr(cx, "Down"))
                             .compact()
                             .on_click(move |_, window, _| {
                                 let mut order = down.borrow_mut();
@@ -188,7 +188,7 @@ pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App
                     )
                     .child(
                         Button::new(("toolbar-remove", index))
-                            .label("Remove")
+                            .label(tr(cx, "Remove"))
                             .compact()
                             .on_click(move |_, window, _| {
                                 remove.borrow_mut().remove(index);
@@ -203,7 +203,7 @@ pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App
             let checked = items.borrow().iter().any(|id| id == tool.id);
             available = available.child(
                 Checkbox::new(tool.id)
-                    .label(tool.label)
+                    .label(tr(cx, tool.label))
                     .checked(checked)
                     .on_change(move |checked, window, _| {
                         let mut items = items.borrow_mut();
@@ -221,7 +221,7 @@ pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App
         let save = items.clone();
         let view = view.clone();
         dialog
-            .title("Customize Toolbar")
+            .title(tr(cx, "Customize Toolbar"))
             .child(div().v_flex().gap_2().child(ordered).child(available))
             .footer(
                 div()
@@ -231,7 +231,7 @@ pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App
                     .flex_wrap()
                     .child(
                         Button::new("toolbar-separator")
-                            .label("Add Separator")
+                            .label(tr(cx, "Add Separator"))
                             .on_click(move |_, window, _| {
                                 if separator.borrow().len() < 40 {
                                     separator.borrow_mut().push(SEPARATOR.to_owned());
@@ -239,20 +239,22 @@ pub(super) fn customize(view: Entity<AppView>, window: &mut Window, cx: &mut App
                                 }
                             }),
                     )
-                    .child(Button::new("toolbar-reset").label("Reset").on_click(
-                        move |_, window, _| {
-                            *reset.borrow_mut() = default_items();
-                            window.refresh();
-                        },
-                    ))
+                    .child(
+                        Button::new("toolbar-reset")
+                            .label(tr(cx, "Reset"))
+                            .on_click(move |_, window, _| {
+                                *reset.borrow_mut() = default_items();
+                                window.refresh();
+                            }),
+                    )
                     .child(
                         Button::new("toolbar-cancel")
-                            .label("Cancel")
+                            .label(tr(cx, "Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         Button::new("toolbar-apply")
-                            .label("Apply")
+                            .label(tr(cx, "Apply"))
                             .primary()
                             .on_click(move |_, window, cx| {
                                 let order = save.borrow().clone();

@@ -56,6 +56,7 @@ pub struct WorkspaceState {
     events: Entity<CoreEvents>,
     window_label: String,
     root: Option<String>,
+    folders: Vec<String>,
     documents: Vec<DocumentItem>,
     active: Option<String>,
     tabs: Vec<String>,
@@ -88,6 +89,7 @@ impl WorkspaceState {
             events,
             window_label,
             root: None,
+            folders: Vec::new(),
             documents: Vec::new(),
             active: None,
             tabs: Vec::new(),
@@ -112,6 +114,7 @@ impl WorkspaceState {
             Value::Array(Vec::new()),
         ) {
             this.root = status.get("root").and_then(Value::as_str).map(str::to_owned);
+            this.folders = status["roots"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
             this.active = status
                 .get("activeDocument")
                 .and_then(Value::as_str)
@@ -130,7 +133,7 @@ impl WorkspaceState {
                 .unwrap_or(true)
             {
                 match event.name.as_str() {
-                    "calmmd://workspace" => this.apply_workspace_event(event),
+                    "calmmd://workspace" => this.apply_workspace_event(event, cx),
                     "calmmd://autosave" => this.apply_autosave_event(event),
                     "calmmd://open-paths" => this.open_dropped_paths(
                         event.payload.as_array().cloned().unwrap_or_default(),
@@ -162,6 +165,54 @@ impl WorkspaceState {
 
     pub fn root(&self) -> Option<&str> {
         self.root.as_deref()
+    }
+
+    pub fn folders(&self) -> &[String] { &self.folders }
+
+    pub fn active_root(&self) -> Option<&str> {
+        self.active.as_deref().and_then(|path| {
+            self.folders.iter().filter(|root| calmmd_core::core::paths::is_within(path, root)).max_by_key(|root| root.len())
+        }).map(String::as_str).or(self.root.as_deref())
+    }
+
+    pub fn favourites(&self) -> Vec<String> {
+        calmmd_core::kv::read(self.context(), "gpui/favourites")
+            .ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+    }
+
+    fn write_favourites(&self, values: &[String]) -> Result<(), String> {
+        let raw = serde_json::to_string(values).map_err(|error| error.to_string())?;
+        calmmd_core::kv::write(self.context(), "gpui/favourites", &raw)
+    }
+
+    pub fn toggle_favourite(&mut self, path: &str, cx: &mut Context<Self>) {
+        use calmmd_core::core::paths::path_key;
+        let mut values = self.favourites();
+        let key = path_key(path);
+        if let Some(index) = values.iter().position(|value| path_key(value) == key) {
+            values.remove(index);
+        } else {
+            values.push(path.to_owned());
+        }
+        if let Err(error) = self.write_favourites(&values) { self.message = error; }
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    pub fn open_favourite(&mut self, path: &str, new_tab: bool, cx: &mut Context<Self>) {
+        let file = StdPath::new(path);
+        let folder = if file.is_file() { file.parent() } else if file.is_dir() { Some(file) } else { None };
+        let Some(folder) = folder else {
+            self.set_message("This favourite is unavailable.".into(), cx);
+            return;
+        };
+        if self.services.workspace.resolve(&self.window_label, path).is_err() {
+            if let Err(error) = self.add_folder(folder.into(), cx) {
+                self.set_message(error, cx);
+                return;
+            }
+        }
+        if file.is_file() { self.navigate_document(path, new_tab, cx); }
     }
 
     pub fn documents(&self) -> &[DocumentItem] {
@@ -251,7 +302,7 @@ impl WorkspaceState {
         let Some(draft) = self.recovery_drafts.iter().find(|draft| draft.id == id).cloned() else { return };
         let Some(path) = draft.record.path.clone() else { return };
         if !self.flush_before_close(cx) { return; }
-        if self.root.as_deref().is_none_or(|root| !calmmd_core::core::paths::is_within(&path, root)) {
+        if !self.folders.iter().any(|root| calmmd_core::core::paths::is_within(&path, root)) {
             let Some(parent) = StdPath::new(&path).parent() else { self.message = "Draft has no parent folder".into(); cx.notify(); return };
             self.open_folder(parent.to_path_buf(), cx);
         }
@@ -263,8 +314,10 @@ impl WorkspaceState {
         if let Err(error) = store.claim_draft(&draft, &buffer_id, &self.window_label) {
             self.message = error; cx.notify(); return;
         }
-        self.active = Some(path.clone());
-        if !self.tabs.contains(&path) { self.tabs.push(path.clone()); }
+        let previous = self.active.replace(path.clone());
+        if let Some(replaced) = place_tab(&mut self.tabs, previous.as_deref(), &path, false) {
+            let _ = self.services.workspace.remove_document(&self.window_label, &replaced);
+        }
         self.text = draft.record.text;
         self.eol = draft.record.eol;
         self.bom = draft.record.bom;
@@ -286,32 +339,48 @@ impl WorkspaceState {
 
     pub fn reopen_document(&mut self, cx: &mut Context<Self>) {
         if let Some(path) = self.closed_tabs.pop() {
-            self.open_document(&path, cx);
+            self.open_in_new_tab(&path, cx);
         } else {
             self.set_message("No recently closed document".into(), cx);
         }
     }
 
     pub fn close_folder(&mut self, cx: &mut Context<Self>) {
-        if !self.flush_before_close(cx) { return; }
-        if let Err(error) = self.services.workspace.sync(&self.window_label, calmmd_core::core::dto::WorkspaceSnapshotDto {
-            root: None, documents: Vec::new(), active_document: None,
-        }) {
-            self.set_message(error, cx);
-            return;
+        let folder = self.active.as_deref().and_then(|path| {
+            self.folders.iter().filter(|root| calmmd_core::core::paths::is_within(path, root)).max_by_key(|root| root.len())
+        }).cloned().or_else(|| self.root.clone());
+        if let Some(folder) = folder {
+            if let Err(error) = self.close_root(&folder, cx) { self.set_message(error, cx); }
         }
-        self.claim_space(None, cx);
-        self.root = None;
-        self.active = None;
-        self.tabs.clear();
-        self.closed_tabs.clear();
-        self.documents.clear();
-        self.search_results.clear();
-        self.text = "Open a folder to begin.".into();
-        self.conflict = false;
-        self.dirty = false;
-        self.autosave_status = "clean".into();
+    }
+
+    pub fn close_root(&mut self, folder: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        use calmmd_core::core::paths::{is_within, path_key};
+        let mut roots = self.folders.clone();
+        roots.retain(|root| path_key(root) != path_key(folder));
+        if roots.len() == self.folders.len() { return Ok(()); }
+        let detached = |path: &str| is_within(path, folder) && !roots.iter().any(|root| is_within(path, root));
+        self.services.autosave.detach_paths(&self.window_label, detached)?;
+        self.services.workspace.set_roots(&self.window_label, roots.clone())?;
+        self.tabs.retain(|path| !detached(path));
+        self.closed_tabs.retain(|path| !detached(path));
+        let remove_active = self.active.as_deref().is_some_and(detached);
+        if self.root.as_deref() == Some(folder) { self.claim_space(None, cx); }
+        self.folders = roots;
+        self.root = self.folders.first().cloned();
+        self.refresh_documents();
+        self.refresh_recovery_drafts();
+        self.run_search();
+        if remove_active {
+            self.active = None;
+            self.text.clear();
+            self.dirty = false;
+            self.conflict = false;
+            self.autosave_status = "clean".into();
+            if let Some(path) = self.tabs.last().cloned() { self.open_document(&path, cx); }
+        }
         self.set_message("Folder closed".into(), cx);
+        Ok(())
     }
 
     pub fn recent_folders(&self) -> Vec<String> {
@@ -346,7 +415,7 @@ impl WorkspaceState {
         let active = self.tabs.iter().position(|path| Some(path.as_str()) == self.active()).unwrap_or(0);
         self.services.session.save_space(&SpaceDto {
             v: 1, id: id.clone(), name: name.to_owned(), created_at, last_opened: now,
-            session: SessionDto { root: Some(root), tabs, active, ..Default::default() },
+            session: SessionDto { root: Some(root), extra_roots: self.folders.iter().skip(1).cloned().collect(), tabs, active, ..Default::default() },
         })?;
         self.claim_space(Some(&id), cx);
         self.set_message(format!("Space saved: {name}"), cx);
@@ -360,9 +429,10 @@ impl WorkspaceState {
         if self.services.claims.holder(id).is_some_and(|owner| owner != self.window_label) {
             return Err("This Space is already open in another window.".into());
         }
-        if !self.flush_before_close(cx) { return Err(self.message.clone()); }
-        self.open_folder(root.into(), cx);
-        if self.root.as_deref() != Some(root) { return Err(self.message.clone()); }
+        self.try_open_folder(root.into(), cx)?;
+        for extra in &space.session.extra_roots {
+            if StdPath::new(extra).is_dir() { self.add_folder(extra.into(), cx)?; }
+        }
         self.claim_space(Some(id), cx);
         self.tabs = space.session.tabs.iter().filter_map(|tab| tab.path.clone())
             .filter(|path| StdPath::new(path).is_file() && self.services.workspace.resolve(&self.window_label, path).is_ok())
@@ -390,29 +460,57 @@ impl WorkspaceState {
     }
 
     pub fn open_folder(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
-        if !self.flush_before_close(cx) { return; }
+        if let Err(error) = self.add_folder(path, cx) { self.set_message(error, cx); }
+    }
+
+    pub fn add_folder(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) -> Result<(), String> {
+        use calmmd_core::core::paths::path_key;
+        if !path.is_dir() { return Err("The selected folder is unavailable.".into()); }
         let path = path.to_string_lossy().into_owned();
-        let result = self.services.workspace.sync(
+        if !self.folders.iter().any(|root| path_key(root) == path_key(&path)) {
+            let mut roots = self.folders.clone();
+            roots.push(path.clone());
+            self.services.workspace.set_roots(&self.window_label, roots.clone())?;
+            self.folders = roots;
+            self.root = self.folders.first().cloned();
+            self.remember_folder(&path);
+            self.refresh_documents();
+            self.run_search();
+        }
+        self.set_message(format!("Folder opened: {path}"), cx);
+        Ok(())
+    }
+
+    fn remember_folder(&self, path: &str) {
+        use calmmd_core::core::paths::path_key;
+        let mut recent = self.recent_folders();
+        recent.retain(|folder| path_key(folder) != path_key(path));
+        recent.insert(0, path.to_owned());
+        recent.truncate(12);
+        if let Ok(raw) = serde_json::to_string(&recent) {
+            let _ = calmmd_core::kv::write(self.context(), "gpui/recent-folders", &raw);
+        }
+    }
+
+    pub fn try_open_folder(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) -> Result<(), String> {
+        if !path.is_dir() {
+            return Err("The selected folder is unavailable.".into());
+        }
+        self.services.autosave.flush_for_folder_switch(&self.window_label)?;
+        let path = path.to_string_lossy().into_owned();
+        self.services.workspace.sync(
             &self.window_label,
             calmmd_core::core::dto::WorkspaceSnapshotDto {
                 root: Some(path.clone()),
                 documents: Vec::new(),
                 active_document: None,
             },
-        );
-        if let Err(error) = result {
-            self.message = error;
-            cx.notify();
-            return;
-        }
+        )?;
+        self.services.autosave.release_saved_owner(&self.window_label);
+        self.refresh_recovery_drafts();
         self.claim_space(None, cx);
-        let mut recent = self.recent_folders();
-        recent.retain(|folder| calmmd_core::core::paths::path_key(folder) != calmmd_core::core::paths::path_key(&path));
-        recent.insert(0, path.clone());
-        recent.truncate(12);
-        if let Ok(raw) = serde_json::to_string(&recent) {
-            let _ = calmmd_core::kv::write(self.context(), "gpui/recent-folders", &raw);
-        }
+        self.remember_folder(&path);
+        self.folders = vec![path.clone()];
         self.root = Some(path);
         self.closed_tabs.clear();
         self.refresh_documents();
@@ -421,18 +519,36 @@ impl WorkspaceState {
         self.text = "Select a document, or create a new one.".into();
         self.conflict = false;
         self.dirty = false;
+        self.mtime_ms = None;
+        self.eol = "\n".into();
+        self.bom = false;
         self.autosave_status = "clean".into();
         self.search_results.clear();
-        self.message = "Folder opened".into();
+        self.message = format!("Folder opened: {}", self.root.as_deref().unwrap_or_default());
         cx.notify();
+        Ok(())
     }
 
     pub fn open_document(&mut self, path: &str, cx: &mut Context<Self>) {
+        self.navigate_document(path, false, cx);
+    }
+
+    pub fn open_in_new_tab(&mut self, path: &str, cx: &mut Context<Self>) {
+        self.navigate_document(path, true, cx);
+    }
+
+    fn navigate_document(&mut self, path: &str, new_tab: bool, cx: &mut Context<Self>) {
         match self.services.workspace.read_document(&self.window_label, path) {
             Ok(value) => {
-                self.active = value.get("path").and_then(Value::as_str).map(str::to_owned);
-                if let Some(path) = self.active.as_ref() {
-                    if !self.tabs.contains(path) { self.tabs.push(path.clone()); }
+                let Some(path) = value.get("path").and_then(Value::as_str) else {
+                    self.set_message("The document has no path.".into(), cx);
+                    return;
+                };
+                let previous = self.active.replace(path.to_owned());
+                if let Some(replaced) = place_tab(&mut self.tabs, previous.as_deref(), path, new_tab) {
+                    if !self.dirty && !self.conflict {
+                        let _ = self.services.workspace.remove_document(&self.window_label, &replaced);
+                    }
                 }
                 self.text = value
                     .get("text")
@@ -474,15 +590,15 @@ impl WorkspaceState {
         if let Some(folder) = folders.into_iter().next() {
             self.open_folder(folder, cx);
         }
-        if self.root.as_deref().is_none_or(|root| documents.first().is_some_and(|path| !calmmd_core::core::paths::is_within(path, root))) {
+        if documents.first().is_some_and(|path| !self.folders.iter().any(|root| calmmd_core::core::paths::is_within(path, root))) {
             if let Some(document) = documents.first() {
                 if let Some(parent) = StdPath::new(document).parent() {
                     self.open_folder(parent.to_owned(), cx);
                 }
             }
         }
-        for document in documents {
-            self.open_document(&document, cx);
+        if let Some(document) = documents.first() {
+            self.open_document(document, cx);
         }
     }
 
@@ -532,10 +648,18 @@ impl WorkspaceState {
         cx.notify();
     }
 
-    pub fn create_document(&mut self, name: &str, cx: &mut Context<Self>) {
+    fn new_document_folder(&self) -> Option<String> {
+        self.active.as_deref().and_then(|path| StdPath::new(path).parent())
+            .filter(|parent| parent.is_dir())
+            .map(|parent| parent.to_string_lossy().into_owned())
+            .filter(|parent| self.services.workspace.resolve(&self.window_label, parent).is_ok())
+            .or_else(|| self.active_root().map(str::to_owned))
+    }
+
+    pub fn create_document(&mut self, name: &str, new_tab: bool, cx: &mut Context<Self>) {
         let result = self.services.workspace.create_document(
             &self.window_label,
-            None,
+            self.new_document_folder().as_deref(),
             name,
             Some("# New note\n"),
         );
@@ -543,7 +667,7 @@ impl WorkspaceState {
             Ok(value) => {
                 let path = value.get("path").and_then(Value::as_str).unwrap_or(name).to_owned();
                 self.refresh_documents();
-                self.open_document(&path, cx);
+                self.navigate_document(&path, new_tab, cx);
                 self.message = "Document created".into();
             }
             Err(error) => self.message = error,
@@ -552,7 +676,11 @@ impl WorkspaceState {
     }
 
     pub fn create_untitled(&mut self, cx: &mut Context<Self>) {
-        let Some(root) = self.root.as_deref() else {
+        self.create_untitled_in_tab(false, cx);
+    }
+
+    pub fn create_untitled_in_tab(&mut self, new_tab: bool, cx: &mut Context<Self>) {
+        let Some(root) = self.new_document_folder() else {
             self.message = "Open a folder before creating a document".into();
             cx.notify();
             return;
@@ -560,8 +688,8 @@ impl WorkspaceState {
         let mut index = 1;
         loop {
             let name = if index == 1 { "Untitled.md".to_owned() } else { format!("Untitled {index}.md") };
-            if !StdPath::new(root).join(&name).exists() {
-                self.create_document(&name, cx);
+            if !StdPath::new(&root).join(&name).exists() {
+                self.create_document(&name, new_tab, cx);
                 return;
             }
             index += 1;
@@ -734,7 +862,7 @@ impl WorkspaceState {
             .workspace
             .search(&self.window_label, &self.search_query, false, false)
             .ok()
-            .and_then(|value| serde_json::from_value::<Vec<Value>>(value.get("hits")?.clone()).ok())
+            .and_then(|value| value.as_array().cloned().or_else(|| value.get("hits")?.as_array().cloned()))
             .unwrap_or_default()
             .into_iter()
             .filter_map(|hit| {
@@ -780,7 +908,7 @@ impl WorkspaceState {
             .unwrap_or_default();
     }
 
-    fn apply_workspace_event(&mut self, event: &CoreEvent) {
+    fn apply_workspace_event(&mut self, event: &CoreEvent, cx: &mut Context<Self>) {
         let kind = event.payload.get("kind").and_then(Value::as_str).unwrap_or("");
         let path = event.payload.get("path").and_then(Value::as_str);
         match kind {
@@ -815,6 +943,21 @@ impl WorkspaceState {
                     }
                 }
                 if let (Some(from), Some(to)) = (event.payload.get("from").and_then(Value::as_str), event.payload.get("to").and_then(Value::as_str)) {
+                    for root in &mut self.folders {
+                        if calmmd_core::core::paths::is_within(root, from) {
+                            *root = calmmd_core::core::paths::rebase(root, from, to);
+                        }
+                    }
+                    self.root = self.folders.first().cloned();
+                    let mut favourites = self.favourites();
+                    let mut changed = false;
+                    for favourite in &mut favourites {
+                        if calmmd_core::core::paths::is_within(favourite, from) {
+                            *favourite = calmmd_core::core::paths::rebase(favourite, from, to);
+                            changed = true;
+                        }
+                    }
+                    if changed { let _ = self.write_favourites(&favourites); }
                     for tab in &mut self.tabs {
                         if calmmd_core::core::paths::is_within(tab, from) { *tab = calmmd_core::core::paths::rebase(tab, from, to); }
                     }
@@ -823,6 +966,26 @@ impl WorkspaceState {
                 self.message = format!("Workspace changed: {kind}");
             }
             "created" | "trashed" => {
+                if kind == "trashed" {
+                    if let Some(path) = path {
+                        let removed = |candidate: &str| calmmd_core::core::paths::is_within(candidate, path);
+                        self.folders.retain(|folder| !removed(folder));
+                        self.root = self.folders.first().cloned();
+                        self.tabs.retain(|tab| !removed(tab));
+                        self.closed_tabs.retain(|tab| !removed(tab));
+                        let favourites = self.favourites();
+                        let kept: Vec<_> = favourites.iter().filter(|item| !removed(item)).cloned().collect();
+                        if favourites.len() != kept.len() { let _ = self.write_favourites(&kept); }
+                        if self.active.as_deref().is_some_and(removed) {
+                            self.active = None;
+                            self.text.clear();
+                            self.dirty = false;
+                            self.conflict = false;
+                            self.autosave_status = "clean".into();
+                            if let Some(next) = self.tabs.last().cloned() { self.open_document(&next, cx); }
+                        }
+                    }
+                }
                 self.refresh_documents();
                 self.message = format!("Workspace changed: {kind}");
             }
@@ -838,6 +1001,12 @@ impl WorkspaceState {
         if let (Some(id), Some(path)) = (id, path) {
             if let Some(current) = self.services.autosave.status(id) {
                 let _ = self.services.workspace.update_autosave(&self.window_label, path, current.dirty, current.conflict, current.mtime_ms);
+                if !current.dirty && !current.conflict && self.active() != Some(path)
+                    && !self.tabs.iter().any(|tab| tab == path)
+                {
+                    let _ = self.services.workspace.remove_document(&self.window_label, path);
+                    self.services.autosave.dispose_if_clean(id);
+                }
             }
         }
         if path != self.active.as_deref() {
@@ -892,6 +1061,22 @@ impl WorkspaceState {
     }
 }
 
+/// Ordinary navigation uses the active slot. A file already shown in another tab is selected.
+fn place_tab(tabs: &mut Vec<String>, active: Option<&str>, path: &str, new_tab: bool) -> Option<String> {
+    use calmmd_core::core::paths::path_key;
+    let target = path_key(path);
+    if tabs.iter().any(|tab| path_key(tab) == target) {
+        return None;
+    }
+    if !new_tab {
+        if let Some(slot) = active.and_then(|active| tabs.iter_mut().find(|tab| path_key(tab) == path_key(active))) {
+            return Some(std::mem::replace(slot, path.to_owned()));
+        }
+    }
+    tabs.push(path.to_owned());
+    None
+}
+
 fn parent_dir(path: &str) -> String {
     StdPath::new(path)
         .parent()
@@ -923,6 +1108,19 @@ fn documents_from_value(value: &Value) -> Option<Vec<DocumentItem>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tab_navigation_reuses_active_slot_unless_a_new_tab_is_requested() {
+        let mut tabs = Vec::new();
+        assert_eq!(super::place_tab(&mut tabs, None, "a.md", false), None);
+        assert_eq!(super::place_tab(&mut tabs, Some("a.md"), "b.md", false), Some("a.md".into()));
+        assert_eq!(tabs, ["b.md"]);
+        assert_eq!(super::place_tab(&mut tabs, Some("b.md"), "c.md", true), None);
+        assert_eq!(super::place_tab(&mut tabs, Some("c.md"), "b.md", false), None);
+        assert_eq!(tabs, ["b.md", "c.md"]);
+        assert_eq!(super::place_tab(&mut tabs, Some("b.md"), "d.md", false), Some("b.md".into()));
+        assert_eq!(tabs, ["d.md", "c.md"]);
+    }
+
     use super::documents_from_value;
     use serde_json::json;
 

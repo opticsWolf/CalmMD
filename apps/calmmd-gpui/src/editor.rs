@@ -64,7 +64,7 @@ pub struct MarkdownEditor {
     pub input: Entity<EditorState>,
     spell_decorations: TextDecorationCollection,
     search_decorations: TextDecorationCollection,
-    last_text: SharedString,
+    document: Option<String>,
     last_decorated_text: SharedString,
     last_spell_language: Option<String>,
     last_search_query: String,
@@ -105,7 +105,7 @@ impl MarkdownEditor {
             input,
             spell_decorations,
             search_decorations,
-            last_text: text.into(),
+            document: state.read(cx).active().map(str::to_owned),
             last_decorated_text: "".into(),
             last_spell_language: None,
             last_search_query: String::new(),
@@ -116,14 +116,11 @@ impl MarkdownEditor {
     }
 
     /// Pushes an external text change into the editor without emitting another edit event.
-    pub fn sync_text(&mut self, text: &str, window: &mut Window, cx: &mut App) {
-        if self.last_text.as_ref() == text {
-            return;
-        }
-        if self.input.read(cx).value().as_ref() != text {
+    pub fn sync_text(&mut self, path: Option<&str>, text: &str, window: &mut Window, cx: &mut App) {
+        if self.document.as_deref() != path || self.input.read(cx).value().as_ref() != text {
             self.input.update(cx, |editor, cx| editor.set_value(text, window, cx));
         }
-        self.last_text = text.into();
+        self.document = path.map(str::to_owned);
     }
 
     /// Recomputes spell and search decorations when their inputs change.

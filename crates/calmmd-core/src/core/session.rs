@@ -40,6 +40,8 @@ pub struct SessionDto {
     pub active: usize,
     #[serde(default)]
     pub root: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_roots: Vec<String>,
     #[serde(default)]
     pub expanded: Vec<String>,
     pub sidebar: SidebarDto,
@@ -65,6 +67,7 @@ impl Default for SessionDto {
             tabs: Vec::new(),
             active: 0,
             root: None,
+            extra_roots: Vec::new(),
             expanded: Vec::new(),
             sidebar: SidebarDto {
                 open: true,
@@ -127,6 +130,8 @@ fn session_from_value(value: Option<&Value>) -> SessionDto {
         tabs,
         active,
         root: string(value.get("root")),
+        extra_roots: value.get("extraRoots").and_then(Value::as_array).into_iter().flatten()
+            .filter_map(|item| string(Some(item))).collect(),
         expanded: value
             .get("expanded")
             .and_then(Value::as_array)

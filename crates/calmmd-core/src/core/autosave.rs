@@ -310,15 +310,51 @@ impl<S: HistoryStore + 'static> AutosaveService<S> {
 
     /// Flush pending edits belonging to a window before closing it.
     pub fn flush_owner(&self, owner: &str) -> Result<(), String> {
+        self.flush_pending_owner(owner, false)
+    }
+
+    /// Persist pending edits before changing roots. Conflicts remain recoverable from their drafts.
+    pub fn flush_for_folder_switch(&self, owner: &str) -> Result<(), String> {
+        self.flush_pending_owner(owner, true)
+    }
+
+    /// Release saved buffers, including conflicts whose latest text is already in a draft.
+    pub fn release_saved_owner(&self, owner: &str) {
+        if let Ok(mut all) = self.pending.write() {
+            all.retain(|_, pending| pending.request.owner.as_deref() != Some(owner) || pending.state.dirty);
+        }
+    }
+
+    /// Park only the buffers that will leave the workspace, retaining their recovery drafts.
+    pub fn detach_paths(&self, owner: &str, detached: impl Fn(&str) -> bool) -> Result<(), String> {
+        let affected = |pending: &Pending| pending.request.owner.as_deref() == Some(owner)
+            && pending.request.path.as_deref().is_some_and(&detached);
+        let ids: Vec<_> = self.pending.read().map_err(|e| e.to_string())?.iter()
+            .filter(|(_, pending)| affected(pending) && (pending.state.dirty || pending.state.conflict))
+            .map(|(id, _)| id.clone()).collect();
+        for id in ids {
+            let state = self.flush(&id);
+            if state.dirty || state.status == "error" {
+                return Err(state.last_error.unwrap_or_else(|| format!("Could not save {id}.")));
+            }
+        }
+        self.pending.write().map_err(|e| e.to_string())?
+            .retain(|_, pending| !affected(pending) || pending.state.dirty);
+        Ok(())
+    }
+
+    fn flush_pending_owner(&self, owner: &str, allow_saved_conflicts: bool) -> Result<(), String> {
         let ids: Vec<String> = self.pending.read().map_err(|e| e.to_string())?
             .iter().filter(|(_, pending)| pending.request.owner.as_deref() == Some(owner)
                 && (pending.state.dirty || pending.state.conflict))
             .map(|(id, _)| id.clone()).collect();
         for id in ids {
             let state = self.flush(&id);
-            if state.conflict { return Err(format!("Resolve the save conflict in {id} before closing.")); }
             if state.dirty || state.status == "error" {
                 return Err(state.last_error.unwrap_or_else(|| format!("Could not save {id}.")));
+            }
+            if state.conflict && !allow_saved_conflicts {
+                return Err(format!("Resolve the save conflict in {id} before closing."));
             }
         }
         Ok(())
@@ -629,6 +665,33 @@ mod tests {
         assert!(service.flush_owner("main").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello");
         assert_eq!(store.drafts().unwrap()[0].record.text, "unsaved conflict");
+    }
+
+    #[tokio::test]
+    async fn switching_folders_keeps_conflicts_in_recovery_and_leaves_other_windows_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old-folder.md").to_string_lossy().into_owned();
+        std::fs::write(&path, "disk copy").unwrap();
+        let store = Arc::new(BufferStore::new(MemoryStore::default()));
+        let service = AutosaveService::new(store.clone(), |_| {});
+        let mut edit = request(&path);
+        edit.idle_ms = 10_000;
+        edit.buffer.owner = Some("main".into());
+        edit.buffer.conflict = true;
+        edit.buffer.text = "recoverable text".into();
+        let mut other = edit.clone();
+        other.buffer.id = "other-tab".into();
+        other.buffer.owner = Some("other".into());
+        service.touch(edit);
+        service.touch(other);
+
+        service.flush_for_folder_switch("main").unwrap();
+        assert!(service.status("tab1").is_some_and(|state| state.conflict && !state.dirty));
+        service.release_saved_owner("main");
+        assert!(service.status("tab1").is_none());
+        assert!(service.status("other-tab").is_some_and(|state| state.dirty));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "disk copy");
+        assert_eq!(store.drafts().unwrap()[0].record.text, "recoverable text");
     }
 
     #[tokio::test]

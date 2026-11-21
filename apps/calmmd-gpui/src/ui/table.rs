@@ -50,17 +50,22 @@ pub(super) fn register(cx: &mut App, windows: &WindowList) {
             if state.read(cx).active().is_none() {
                 return;
             }
-            let input = view.editor.read(cx).editor.input.clone();
+            let Some(input) = input_for_edit(&entry.view, window, cx) else {
+                return;
+            };
             let editor = input.read(cx);
             let value = editor.value();
             let cursor = editor.selected_range().start;
             match edit_table(&value, cursor, action) {
-                Ok((range, replacement)) => input.update(cx, |editor, cx| {
-                    editor.set_selected_range(range.clone(), cx);
-                    editor.replace(replacement, window, cx);
-                    editor.set_selected_range(range.start..range.start, cx);
-                    editor.focus_handle(cx).focus(window, cx);
-                }),
+                Ok((range, replacement)) => {
+                    input.update(cx, |editor, cx| {
+                        editor.set_selected_range(range.clone(), cx);
+                        editor.replace(replacement, window, cx);
+                        editor.set_selected_range(range.start..range.start, cx);
+                    });
+                    sync_edit(&entry.view, &input, window, cx);
+                    finish_format_action(&entry.view, &input, window, cx);
+                }
                 Err(error) => state.update(cx, |state, cx| state.set_message(error.to_owned(), cx)),
             }
         });

@@ -104,7 +104,7 @@ next milestone is a full native shell migration; it is a UI rewrite, not a depen
 - **Phases 11–13 — implemented:** the GPUI shell now has a real Markdown `Editor`
   with zspell wavy underlines, search decorations, autosave/conflict actions, core undo/redo,
   link navigation and sidebar search. The preview uses `TextView::markdown` with native plugins
-  for front matter, callouts, wiki links, math, embeds, Mermaid source and page breaks. CalmMD
+  for front matter, callouts, wiki links, math, embeds, Mermaid and page breaks. CalmMD
   palettes drive light/dark GPUI Kit themes. See `docs/visual-reviews/gpui-phases-11-13.md` for
   the gate checklist; graphical Mermaid parity remains a cutover decision.
 - **Phases 14–15 — implemented:** the core now owns export assets, body construction and the
@@ -612,6 +612,10 @@ Cargo feature.
 
 #### Phase 9 — Window and workspace shell — done
 
+- The file pane shows multiple workspace folders and bookmarks. New documents default to the
+  active document's folder when it belongs to the workspace, and otherwise use the active
+  workspace root. Drag a Markdown file onto an open folder in the pane to move it.
+
 - Implement the GPUI root view and a `Dock` layout with sidebar, tab bar, editor/preview split and
   status bar.
 - Add multi-window support using shared `Entity` state for workspace/session data.
@@ -658,8 +662,12 @@ Cargo feature.
   acceptable; otherwise use explicit `gpui-webview` only for diagram screens.
 - Port video/embed cards and page-break markers to GPUI elements.
 - **Implementation:** math renders as readable native text (Greek letters, powers, indices),
-  recognised video links become click-to-open cards, page breaks become labelled rules, and
-  Mermaid fences use a native source card. Images use GPUI's built-in Markdown image handling.
+  recognised video links become click-to-open cards, and page breaks become labelled rules.
+  The native Mermaid preview draws flowcharts and sequence diagrams. Other diagram types still
+  use the source card. Images use GPUI's built-in Markdown image handling.
+- **Mermaid editing:** show diagram controls when the caret is in a Mermaid fence. Read the
+  current nodes and connections for the connection editor, support connecting, disconnecting
+  and reconnecting, and let users add multiple nodes or participants with one Apply.
 - **Gate:** `docs/visual-reviews/gpui-phases-11-13.md` records the checklist. Graphical Mermaid
   parity is not claimed yet; a local SVG renderer or explicit `gpui-webview` fallback is a cutover
   decision. No browser runtime is added by this phase.
