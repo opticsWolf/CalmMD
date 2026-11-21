@@ -75,6 +75,12 @@ native GPUI Kit shell with no embedded browser.
 | **Paste** | Formatted text from a web page, Word or Google Docs becomes Markdown (headings, bold, links, lists, tables); Paste as Plain Text (`Ctrl/⌘+Shift+V`) keeps just the text |
 | **Safety** | Autosave with crash-safe atomic writes, drafts for untitled notes, and it never overwrites changes made by other apps |
 
+### Sample workspace
+
+Open [the sample workspace](docs/samples/workspace) with **File → Open Folder** and start with
+[`00-Start-Here.md`](docs/samples/workspace/00-Start-Here.md). It has 15 editable notes with tasks,
+tables, code, math, Mermaid diagrams, and nested folders for trying bookmarks and file moves.
+
 ### PDF export
 
 PDFs are laid out by the local [Takumi](https://takumi.kane.tw) engine: native Rust in the desktop
